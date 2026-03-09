@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F4C81"/>
+      <stop offset="50%" stop-color="#1A6FB5"/>
+      <stop offset="100%" stop-color="#2196F3"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#D4A843"/>
+      <stop offset="50%" stop-color="#F0C75E"/>
+      <stop offset="100%" stop-color="#D4A843"/>
+    </linearGradient>
+    <linearGradient id="g3" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#0A3558"/>
+      <stop offset="100%" stop-color="#0F4C81"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+    <clipPath id="circle-clip">
+      <circle cx="256" cy="256" r="240"/>
+    </clipPath>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="248" fill="url(#g3)" filter="url(#shadow)"/>
+  <circle cx="256" cy="256" r="240" fill="url(#g1)" opacity="0.95"/>
+  
+  <!-- Outer ring -->
+  <circle cx="256" cy="256" r="240" fill="none" stroke="url(#g2)" stroke-width="4"/>
+  <circle cx="256" cy="256" r="232" fill="none" stroke="url(#g2)" stroke-width="1" opacity="0.4"/>
+  
+  <!-- Eagle wings (geometric/abstract) - Left wing -->
+  <path d="M 256 180 
+           Q 180 160, 100 200 
+           Q 60 220, 40 260 
+           Q 55 240, 80 230 
+           Q 120 210, 160 220 
+           Q 130 250, 110 280 
+           Q 90 310, 60 330
+           Q 100 310, 130 290
+           Q 160 270, 180 260 
+           Q 200 250, 220 260
+           Z" 
+        fill="#FFFFFF" opacity="0.95"/>
+  
+  <!-- Right wing (mirrored) -->
+  <path d="M 256 180 
+           Q 332 160, 412 200 
+           Q 452 220, 472 260 
+           Q 457 240, 432 230 
+           Q 392 210, 352 220 
+           Q 382 250, 402 280 
+           Q 422 310, 452 330
+           Q 412 310, 382 290
+           Q 352 270, 332 260 
+           Q 312 250, 292 260
+           Z" 
+        fill="#FFFFFF" opacity="0.95"/>
+
+  <!-- Eagle head silhouette -->
+  <path d="M 256 150
+           Q 235 150, 226 168
+           Q 220 180, 224 195
+           Q 228 208, 240 218
+           L 256 230
+           L 272 218
+           Q 284 208, 288 195
+           Q 292 180, 286 168
+           Q 277 150, 256 150 Z"
+        fill="#FFFFFF" opacity="0.95"/>
+  
+  <!-- Beak -->
+  <path d="M 246 200 L 256 222 L 266 200 Q 260 210 256 210 Q 252 210 246 200 Z" 
+        fill="url(#g2)"/>
+  
+  <!-- Eye - The core "Eagle Eye" symbol -->
+  <ellipse cx="256" cy="284" rx="58" ry="52" fill="#FFFFFF" stroke="url(#g2)" stroke-width="3"/>
+  <ellipse cx="256" cy="284" rx="48" ry="42" fill="#0A3558"/>
+  
+  <!-- Iris with gradient -->
+  <circle cx="256" cy="284" r="28" fill="url(#g2)"/>
+  <circle cx="256" cy="284" r="14" fill="#0A3558"/>
+  
+  <!-- Eye reflection/highlight -->
+  <ellipse cx="248" cy="276" rx="7" ry="5" fill="#FFFFFF" opacity="0.7"/>
+  <ellipse cx="264" cy="290" rx="3" ry="2" fill="#FFFFFF" opacity="0.4"/>
+  
+  <!-- Decorative scan lines emanating from eye -->
+  <line x1="198" y1="284" x2="142" y2="284" stroke="url(#g2)" stroke-width="1.5" opacity="0.5"/>
+  <line x1="314" y1="284" x2="370" y2="284" stroke="url(#g2)" stroke-width="1.5" opacity="0.5"/>
+  <line x1="215" y1="252" x2="172" y2="228" stroke="url(#g2)" stroke-width="1" opacity="0.3"/>
+  <line x1="297" y1="252" x2="340" y2="228" stroke="url(#g2)" stroke-width="1" opacity="0.3"/>
+  <line x1="215" y1="316" x2="172" y2="340" stroke="url(#g2)" stroke-width="1" opacity="0.3"/>
+  <line x1="297" y1="316" x2="340" y2="340" stroke="url(#g2)" stroke-width="1" opacity="0.3"/>
+  
+  <!-- Bottom text area -->
+  <text x="256" y="390" text-anchor="middle" font-family="'Segoe UI', 'Tahoma', sans-serif" 
+        font-size="28" font-weight="700" fill="url(#g2)" letter-spacing="4">
+    EAGLE EYE
+  </text>
+  <text x="256" y="418" text-anchor="middle" font-family="'Segoe UI', 'Tahoma', sans-serif" 
+        font-size="22" font-weight="600" fill="#FFFFFF" opacity="0.9" letter-spacing="2">
+    عين النسر
+  </text>
+  
+  <!-- Small decorative line under text -->
+  <line x1="206" y1="430" x2="306" y2="430" stroke="url(#g2)" stroke-width="1.5" opacity="0.6"/>
+</svg>
