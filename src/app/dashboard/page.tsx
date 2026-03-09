@@ -1,7 +1,8 @@
 import { createClient } from '@/lib/supabase/server';
-import { getLocalSession } from '@/lib/supabase/session';
+import { getSessionEmployee } from '@/app/actions/requests';
+import Link from 'next/link';
 
-function KPICard({ title, value, icon, color, subtitle }: { title: string; value: string; icon: string; color: string; subtitle: string }) {
+function KPICard({ title, value, icon, color, subtitle }: { title: string; value: string | number; icon: string; color: string; subtitle: string }) {
   const colors: Record<string, string> = { amber: 'bg-amber-50 border-amber-100', blue: 'bg-blue-50 border-blue-100', green: 'bg-emerald-50 border-emerald-100', red: 'bg-red-50 border-red-100' };
   return (
     <div className={`kpi-card ${colors[color] || ''}`}>
@@ -19,11 +20,48 @@ function KPICard({ title, value, icon, color, subtitle }: { title: string; value
 
 export default async function DashboardPage() {
   const supabase = await createClient();
-  const user = await getLocalSession();
-  const { data: employee } = await supabase.from('employees').select('*, company:companies(*), roles:user_roles(*)').eq('auth_user_id', user?.id).single();
+  const employee = await getSessionEmployee();
   const name = employee?.full_name_ar || employee?.full_name_en || 'المستخدم';
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'صباح الخير' : 'مساء الخير';
+
+  // Live KPIs
+  const { count: pendingCount } = await supabase
+    .from('approval_steps').select('*', { count: 'exact', head: true })
+    .eq('approver_id', employee?.id).eq('status', 'pending');
+
+  const { count: myOpenCount } = await supabase
+    .from('requests').select('*', { count: 'exact', head: true })
+    .eq('requester_id', employee?.id)
+    .not('status', 'in', '("completed","cancelled","archived","rejected")');
+
+  const { count: completedCount } = await supabase
+    .from('requests').select('*', { count: 'exact', head: true })
+    .eq('status', 'completed');
+
+  const { count: overdueCount } = await supabase
+    .from('requests').select('*', { count: 'exact', head: true })
+    .eq('sla_breached', true)
+    .not('status', 'in', '("completed","cancelled","archived","rejected")');
+
+  // Recent requests
+  const { data: recentRequests } = await supabase
+    .from('requests')
+    .select('id, request_number, subject, request_type, status, created_at, requester:employees!requester_id(full_name_ar)')
+    .order('created_at', { ascending: false })
+    .limit(5);
+
+  const statusLabels: Record<string, string> = {
+    draft: 'مسودة', submitted: 'مقدم', under_review: 'قيد المراجعة',
+    approved: 'موافق عليه', rejected: 'مرفوض', completed: 'مكتمل',
+    pending_clarification: 'بانتظار توضيح', cancelled: 'ملغي',
+  };
+
+  const statusColors: Record<string, string> = {
+    draft: '#94A3B8', submitted: '#3B82F6', under_review: '#8B5CF6',
+    approved: '#10B981', rejected: '#EF4444', completed: '#059669',
+    pending_clarification: '#F59E0B', cancelled: '#6B7280',
+  };
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -31,36 +69,59 @@ export default async function DashboardPage() {
         <h1 className="text-2xl font-bold text-slate-900">{greeting}، {name}</h1>
         <p className="text-slate-500 text-sm mt-1">{employee?.company?.name_ar} — {new Intl.DateTimeFormat('ar-SA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).format(new Date())}</p>
       </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        <KPICard title="بانتظار إجرائي" value="—" icon="⏳" color="amber" subtitle="طلبات تحتاج موافقتي" />
-        <KPICard title="طلباتي المفتوحة" value="—" icon="📋" color="blue" subtitle="قيد المعالجة" />
-        <KPICard title="مكتملة هذا الشهر" value="—" icon="✅" color="green" subtitle="تم إنجازها" />
-        <KPICard title="متأخرة" value="—" icon="🔴" color="red" subtitle="تجاوزت SLA" />
+        <KPICard title="بانتظار إجرائي" value={pendingCount ?? 0} icon="⏳" color="amber" subtitle="طلبات تحتاج موافقتي" />
+        <KPICard title="طلباتي المفتوحة" value={myOpenCount ?? 0} icon="📋" color="blue" subtitle="قيد المعالجة" />
+        <KPICard title="مكتملة" value={completedCount ?? 0} icon="✅" color="green" subtitle="تم إنجازها" />
+        <KPICard title="متأخرة" value={overdueCount ?? 0} icon="🔴" color="red" subtitle="تجاوزت SLA" />
       </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm">
-          <div className="px-6 py-4 border-b border-slate-100"><h2 className="font-semibold text-slate-900">النشاط الأخير</h2></div>
-          <div className="p-6 flex flex-col items-center justify-center py-12 text-slate-400">
-            <div className="w-16 h-16 rounded-full bg-slate-50 flex items-center justify-center mb-4">
-              <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-            </div>
-            <p className="text-sm font-medium">لا يوجد نشاط حديث</p>
-            <p className="text-xs mt-1">ابدأ بإنشاء طلب جديد</p>
+          <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+            <h2 className="font-semibold text-slate-900">النشاط الأخير</h2>
+            <Link href="/dashboard/requests" className="text-xs text-eagle-600 hover:underline">عرض الكل</Link>
           </div>
+          {!recentRequests || recentRequests.length === 0 ? (
+            <div className="p-12 text-center text-slate-400">
+              <span className="text-3xl block mb-3">📋</span>
+              <p className="text-sm font-medium">لا يوجد نشاط حديث</p>
+              <p className="text-xs mt-1">ابدأ بإنشاء طلب جديد</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-50">
+              {recentRequests.map((req: any) => (
+                <Link key={req.id} href={`/dashboard/requests/${req.id}`}
+                  className="flex items-center gap-4 px-6 py-4 hover:bg-slate-50 transition-colors">
+                  <div className="w-2 h-2 rounded-full shrink-0" style={{ background: statusColors[req.status] || '#94A3B8' }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-900 truncate">{req.subject}</p>
+                    <p className="text-xs text-slate-500">{req.requester?.full_name_ar} • <span dir="ltr">{req.request_number}</span></p>
+                  </div>
+                  <span className="text-xs px-2.5 py-1 rounded-full font-medium"
+                    style={{ background: (statusColors[req.status] || '#94A3B8') + '15', color: statusColors[req.status] || '#94A3B8' }}>
+                    {statusLabels[req.status] || req.status}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
+
         <div className="space-y-5">
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
             <h3 className="font-semibold text-slate-900 mb-4">إجراءات سريعة</h3>
             <div className="space-y-2">
-              {[{ label: 'طلب داخلي عام', href: '/dashboard/new-request?type=general_internal', icon: '📝' },
-                { label: 'طلب صرف مالي', href: '/dashboard/new-request?type=fund_disbursement', icon: '💰' },
-                { label: 'طلب إجازة', href: '/dashboard/new-request?type=leave_approval', icon: '🏖️' },
-                { label: 'طلب بين الشركات', href: '/dashboard/new-request?type=intercompany', icon: '🏢' }].map(action => (
-                <a key={action.href} href={action.href} className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-50 transition-colors group">
-                  <span className="text-lg">{action.icon}</span>
-                  <span className="text-sm text-slate-700 group-hover:text-eagle-600 font-medium">{action.label}</span>
+              {[{ label: 'طلب داخلي عام', href: '/dashboard/new-request', icon: '📝' },
+                { label: 'طلب صرف مالي', href: '/dashboard/new-request', icon: '💰' },
+                { label: 'طلب إجازة', href: '/dashboard/new-request', icon: '🏖️' },
+                { label: 'طلب بين الشركات', href: '/dashboard/new-request', icon: '🏢' }].map(a => (
+                <Link key={a.label} href={a.href} className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-50 transition-colors group">
+                  <span className="text-lg">{a.icon}</span>
+                  <span className="text-sm text-slate-700 group-hover:text-eagle-600 font-medium">{a.label}</span>
                   <svg className="w-4 h-4 text-slate-300 ms-auto group-hover:text-eagle-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                </a>
+                </Link>
               ))}
             </div>
           </div>
