@@ -92,6 +92,7 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
   const pendingStep = approvalSteps.find(s => s.approver_id === employee.id && s.status === 'pending' && s.step_order === currentPendingOrder) ?? null;
 
   const isAdmin = employee.roles?.some((r: any) => ['super_admin', 'ceo', 'company_admin', 'department_manager'].includes(r.role));
+  const currentEmployeeRoles = employee.roles?.map((r: any) => r.role) || [];
 
   return (
     <RequestDetailClient
@@ -99,9 +100,11 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
       actions={actions}
       approvalSteps={approvalSteps}
       evidence={evidence}
-      pendingStep={pendingStep ? { id: pendingStep.id } : null}
+      pendingStep={pendingStep ? { id: pendingStep.id, approverRole: pendingStep.approver_role } : null}
       currentEmployeeId={employee.id}
+      currentEmployeeDeptId={employee.department_id}
       isAdmin={!!isAdmin}
+      currentEmployeeRoles={currentEmployeeRoles}
     />
   );
 }

@@ -9,7 +9,7 @@ const pathLabels: Record<string, { ar: string; en: string; color: string }> = {
   settlement: { ar: 'تسوية', en: 'Settlement', color: 'bg-violet-100 text-violet-700' },
 };
 
-export default function ViolationsClient({ violations, entities }: any) {
+export default function ViolationsClient({ violations, entities, isReadOnly }: any) {
   const { lang } = useLanguage();
   const [filterPath, setFilterPath] = useState('');
   const entityMap = new Map(entities.map((e: any) => [e.id, e]));
@@ -21,6 +21,13 @@ export default function ViolationsClient({ violations, entities }: any) {
         <h1 className="text-2xl font-bold text-slate-900">{lang === 'ar' ? 'إدارة المخالفات' : 'Violations Management'}</h1>
         <p className="text-sm text-slate-500 mt-1">{filtered.length} {lang === 'ar' ? 'مخالفة' : 'violations'}</p>
       </div>
+
+      {isReadOnly && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 text-sm">
+          <span>🔒</span>
+          <span>{lang === 'ar' ? 'وضع العرض فقط' : 'View Only Mode'}</span>
+        </div>
+      )}
 
       <div className="flex gap-3">
         <select value={filterPath} onChange={e => setFilterPath(e.target.value)} className="input-field w-48">

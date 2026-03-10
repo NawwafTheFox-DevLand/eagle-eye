@@ -29,7 +29,7 @@ function expiryBadge(date: string, lang: string) {
   return { text: lang === 'ar' ? `${days} يوم` : `${days}d`, cls: 'bg-emerald-100 text-emerald-700' };
 }
 
-export default function LicensesClient({ licenses, entities }: any) {
+export default function LicensesClient({ licenses, entities, isReadOnly }: any) {
   const { lang } = useLanguage();
   const [filterType, setFilterType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
@@ -49,6 +49,13 @@ export default function LicensesClient({ licenses, entities }: any) {
         <h1 className="text-2xl font-bold text-slate-900">{lang === 'ar' ? 'متابعة التراخيص' : 'License Tracker'}</h1>
         <p className="text-sm text-slate-500 mt-1">{filtered.length} {lang === 'ar' ? 'ترخيص' : 'licenses'}</p>
       </div>
+
+      {isReadOnly && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 text-sm">
+          <span>🔒</span>
+          <span>{lang === 'ar' ? 'وضع العرض فقط' : 'View Only Mode'}</span>
+        </div>
+      )}
 
       <div className="flex gap-3 flex-wrap">
         <select value={filterType} onChange={e => setFilterType(e.target.value)} className="input-field w-48">

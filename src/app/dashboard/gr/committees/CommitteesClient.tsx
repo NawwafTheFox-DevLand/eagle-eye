@@ -8,7 +8,7 @@ const typeLabels: Record<string, { ar: string; en: string; icon: string }> = {
   renovation: { ar: 'تجديد', en: 'Renovation', icon: '🔧' },
 };
 
-export default function CommitteesClient({ committees }: any) {
+export default function CommitteesClient({ committees, isReadOnly }: any) {
   const { lang } = useLanguage();
 
   return (
@@ -17,6 +17,13 @@ export default function CommitteesClient({ committees }: any) {
         <h1 className="text-2xl font-bold text-slate-900">{lang === 'ar' ? 'اللجان' : 'Committees'}</h1>
         <p className="text-sm text-slate-500 mt-1">{committees.length} {lang === 'ar' ? 'لجنة' : 'committees'}</p>
       </div>
+
+      {isReadOnly && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 text-sm">
+          <span>🔒</span>
+          <span>{lang === 'ar' ? 'وضع العرض فقط' : 'View Only Mode'}</span>
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         {committees.length === 0 ? (

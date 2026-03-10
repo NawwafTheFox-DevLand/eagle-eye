@@ -10,7 +10,7 @@ const groupNames: Record<number, { ar: string; en: string }> = {
   4: { ar: 'الشيخ منصور', en: 'Sheikh Mansour' },
 };
 
-export default function EntitiesClient({ entities }: any) {
+export default function EntitiesClient({ entities, isReadOnly }: any) {
   const { lang } = useLanguage();
   const [filterGroup, setFilterGroup] = useState<number | ''>('');
 
@@ -28,6 +28,13 @@ export default function EntitiesClient({ entities }: any) {
           {[1, 2, 3, 4].map(g => <option key={g} value={g}>{groupNames[g]?.[lang]}</option>)}
         </select>
       </div>
+
+      {isReadOnly && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 text-sm">
+          <span>🔒</span>
+          <span>{lang === 'ar' ? 'وضع العرض فقط' : 'View Only Mode'}</span>
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
         {filtered.length === 0 ? (

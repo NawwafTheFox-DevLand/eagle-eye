@@ -21,13 +21,14 @@ const statusLabels: Record<string, { ar: string; en: string }> = {
 };
 
 const actionLabels: Record<string, { ar: string; en: string }> = {
-  submitted:   { ar: 'قدّم الطلب',    en: 'submitted' },
-  approved:    { ar: 'وافق',          en: 'approved' },
-  rejected:    { ar: 'رفض',           en: 'rejected' },
-  sent_back:   { ar: 'طلب توضيح',     en: 'requested clarification' },
-  cancelled:   { ar: 'ألغى',          en: 'cancelled' },
-  resubmitted: { ar: 'أعاد التقديم',  en: 'resubmitted' },
-  completed:   { ar: 'أكمل التنفيذ', en: 'marked as completed' },
+  submitted:             { ar: 'قدّم الطلب',       en: 'submitted' },
+  approved:              { ar: 'وافق',              en: 'approved' },
+  rejected:              { ar: 'رفض',               en: 'rejected' },
+  sent_back:             { ar: 'طلب توضيح',         en: 'requested clarification' },
+  cancelled:             { ar: 'ألغى',              en: 'cancelled' },
+  resubmitted:           { ar: 'أعاد التقديم',      en: 'resubmitted' },
+  completed:             { ar: 'أكمل التنفيذ',      en: 'marked as completed' },
+  delegated_to_employee: { ar: 'عُيِّن لموظف',      en: 'assigned to employee' },
 };
 
 const leaveTypeLabels: Record<string, { ar: string; en: string }> = {
@@ -59,13 +60,67 @@ export interface RequestDetailProps {
   actions: any[];
   approvalSteps: any[];
   evidence: any[];
-  pendingStep: { id: string } | null;
+  pendingStep: { id: string; approverRole?: string } | null;
   currentEmployeeId: string;
+  currentEmployeeDeptId?: string;
   isAdmin: boolean;
+  currentEmployeeRoles: string[];
+}
+
+function filterActionsForViewer(
+  actions: any[],
+  approvalSteps: any[],
+  currentEmployeeId: string,
+  roles: string[],
+  request: any,
+): any[] {
+  const isSuperAdmin = roles.includes('super_admin');
+  const isCEO = roles.includes('ceo');
+  const isCompanyAdmin = roles.includes('company_admin');
+  const isDeptManager = roles.includes('department_manager');
+  const isRequester = request.requester_id === currentEmployeeId;
+
+  // Super admin / CEO: full audit trail
+  if (isSuperAdmin || isCEO) return actions;
+
+  // Company admin viewing their company's request: full notes
+  if (isCompanyAdmin) return actions;
+
+  // Dept manager: full notes for their dept requests
+  if (isDeptManager) return actions;
+
+  // Requester: show own submission note + sent_back notes, hide other rationale
+  if (isRequester) {
+    return actions.map(a => {
+      if (a.action === 'submitted' && a.actor_id === currentEmployeeId) return a;
+      if (a.action === 'sent_back') return a;
+      if (a.action === 'resubmitted' && a.actor_id === currentEmployeeId) return a;
+      if (a.action === 'cancelled' && a.actor_id === currentEmployeeId) return a;
+      if (a.action === 'completed') return a;
+      return { ...a, rationale: null, note: a.actor_id === currentEmployeeId ? a.note : null };
+    });
+  }
+
+  // Current/past approver in the chain
+  const myStep = approvalSteps.find(s => s.approver_id === currentEmployeeId);
+  if (myStep) {
+    const myOrder = myStep.step_order;
+    const prevStep = approvalSteps.find(s => s.step_order === myOrder - 1);
+    const allowedActorIds = new Set([currentEmployeeId, prevStep?.approver_id].filter(Boolean));
+    return actions.map(a => {
+      if (allowedActorIds.has(a.actor_id)) return a;
+      if (a.action === 'submitted') return a;
+      if (a.action === 'sent_back' && a.actor_id === currentEmployeeId) return a;
+      return { ...a, rationale: null, note: null };
+    });
+  }
+
+  // Default: show actions without rationale
+  return actions.map(a => ({ ...a, rationale: null, note: null }));
 }
 
 export default function RequestDetailClient({
-  request, actions, approvalSteps, evidence, pendingStep, currentEmployeeId, isAdmin,
+  request, actions, approvalSteps, evidence, pendingStep, currentEmployeeId, currentEmployeeDeptId, isAdmin, currentEmployeeRoles,
 }: RequestDetailProps) {
   const { lang } = useLanguage();
   const [isPending, startTransition] = useTransition();
@@ -76,6 +131,7 @@ export default function RequestDetailClient({
   const [showCompleteForm, setShowCompleteForm] = useState(false);
 
   const isRequester = request.requester_id === currentEmployeeId;
+  const visibleActions = filterActionsForViewer(actions, approvalSteps, currentEmployeeId, currentEmployeeRoles, request);
   const canCancel    = isRequester && CANCELLABLE.has(request.status);
   const canResubmit  = isRequester && request.status === 'pending_clarification';
   const canComplete  = (isAdmin || isRequester) && request.status === 'approved';
@@ -318,7 +374,12 @@ export default function RequestDetailClient({
 
           {/* Approval action panel (for approvers) */}
           {pendingStep && (
-            <RequestActions requestId={request.id} stepId={pendingStep.id} />
+            <RequestActions
+              requestId={request.id}
+              stepId={pendingStep.id}
+              approverRole={pendingStep.approverRole}
+              currentDeptId={currentEmployeeDeptId}
+            />
           )}
 
           {/* Resubmit panel */}
@@ -379,11 +440,11 @@ export default function RequestDetailClient({
           {/* Timeline */}
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
             <h3 className="font-semibold text-slate-900 mb-4">{t.actionLog}</h3>
-            {actions.length === 0 ? (
+            {visibleActions.length === 0 ? (
               <p className="text-sm text-slate-400">{t.noActions}</p>
             ) : (
               <div className="space-y-4">
-                {actions.map((action: any, i: number) => {
+                {visibleActions.map((action: any, i: number) => {
                   const actorName = lang === 'ar'
                     ? (action.actor?.full_name_ar || action.actor?.full_name_en || t.system)
                     : (action.actor?.full_name_en || action.actor?.full_name_ar || t.system);
@@ -398,7 +459,7 @@ export default function RequestDetailClient({
                           action.action === 'completed'  ? 'bg-blue-500' :
                           action.action === 'cancelled'  ? 'bg-slate-400' : 'bg-blue-500'
                         }`} />
-                        {i < actions.length - 1 && <div className="w-px flex-1 bg-slate-200 my-1" />}
+                        {i < visibleActions.length - 1 && <div className="w-px flex-1 bg-slate-200 my-1" />}
                       </div>
                       <div className="pb-4">
                         <p className="text-sm font-medium text-slate-900">

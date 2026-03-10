@@ -238,7 +238,7 @@ async function generateApprovalSteps(service: any, request: any, requester: any)
   const added = new Set<string>();
   added.add(requester.id);
 
-  async function addStep(id: string | null | undefined, role: string) {
+  async function addStep(id: string | null | undefined, role: string, extra: Record<string, any> = {}) {
     if (!id) return;
     const { effectiveId, originalId } = await resolveDelegate(service, id);
     if (added.has(id) || added.has(effectiveId)) return;
@@ -251,7 +251,21 @@ async function generateApprovalSteps(service: any, request: any, requester: any)
       delegate_id: originalId,
       approver_role: role,
       is_mandatory: true,
+      ...extra,
     });
+  }
+
+  // Check if request is routine eligible
+  async function isRoutineRequest(): Promise<boolean> {
+    if (request.amount && parseFloat(request.amount) > 0) return false;
+    if (request.confidentiality === 'restricted') return false;
+    if (request.priority === 'urgent') return false;
+    const { data: config } = await service
+      .from('request_type_configs')
+      .select('is_routine_eligible')
+      .eq('request_type', request.request_type)
+      .maybeSingle();
+    return !!config?.is_routine_eligible;
   }
 
   const isManager = requester.roles?.some((r: any) => ['department_manager', 'ceo', 'super_admin'].includes(r.role));
@@ -259,13 +273,46 @@ async function generateApprovalSteps(service: any, request: any, requester: any)
   // Step 1: Origin dept manager
   if (!isManager && request.origin_dept_id) {
     const { data: d } = await service.from('departments').select('head_employee_id').eq('id', request.origin_dept_id).single();
-    await addStep(d?.head_employee_id, 'department_manager');
+    await addStep(d?.head_employee_id, 'department_manager', { can_delegate: true });
   }
 
-  // Step 2: Destination dept manager (if different dept)
+  // Step 2: Destination dept (routine check)
   if (request.destination_dept_id && request.destination_dept_id !== request.origin_dept_id) {
-    const { data: d } = await service.from('departments').select('head_employee_id').eq('id', request.destination_dept_id).single();
-    await addStep(d?.head_employee_id, 'department_manager');
+    const routine = await isRoutineRequest();
+    if (routine) {
+      // Load-balance: pick employee in dest dept with fewest open assigned requests
+      const { data: deptEmps } = await service
+        .from('employees')
+        .select('id')
+        .eq('department_id', request.destination_dept_id)
+        .eq('is_active', true);
+
+      if (deptEmps && deptEmps.length > 0) {
+        const empIds = deptEmps.map((e: any) => e.id);
+        // Count open requests per employee
+        const { data: openSteps } = await service
+          .from('approval_steps')
+          .select('approver_id')
+          .in('approver_id', empIds)
+          .eq('status', 'pending');
+
+        const counts = new Map<string, number>();
+        for (const id of empIds) counts.set(id, 0);
+        for (const s of openSteps || []) {
+          counts.set(s.approver_id, (counts.get(s.approver_id) || 0) + 1);
+        }
+
+        // Pick least-loaded (not already in added set)
+        const candidates = empIds.filter((id: string) => !added.has(id));
+        if (candidates.length > 0) {
+          const leastLoaded = candidates.sort((a: string, b: string) => (counts.get(a) || 0) - (counts.get(b) || 0))[0];
+          await addStep(leastLoaded, 'employee');
+        }
+      }
+    } else {
+      const { data: d } = await service.from('departments').select('head_employee_id').eq('id', request.destination_dept_id).single();
+      await addStep(d?.head_employee_id, 'department_manager', { can_delegate: true });
+    }
   }
 
   // Step 3: Company CEO (intercompany + financial + HR + structural)
@@ -650,4 +697,123 @@ export async function completeRequest(requestId: string, note: string) {
     bodyAr:  `تم تنفيذ طلبك بنجاح: ${req.subject}`,
     bodyEn:  `Your request has been completed: ${req.subject}`,
   });
+}
+
+// ── Get dept employees for assign ─────────────────────────────
+export async function getDeptEmployeesForAssign(deptId: string) {
+  const service = await createServiceClient();
+  const { data } = await service
+    .from('employees')
+    .select('id, full_name_ar, full_name_en, employee_code')
+    .eq('department_id', deptId)
+    .eq('is_active', true)
+    .order('full_name_ar');
+  return data || [];
+}
+
+// ── Assign to Employee (dept manager delegates to employee) ───
+export async function assignToEmployee(requestId: string, stepId: string, employeeId: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const service = await createServiceClient();
+  const { data: employee } = await service
+    .from('employees')
+    .select('id, auth_user_id, department_id')
+    .eq('auth_user_id', user.id)
+    .single();
+  if (!employee) throw new Error('Employee not found');
+
+  const { data: roles } = await service
+    .from('user_roles')
+    .select('role')
+    .eq('employee_id', employee.id);
+
+  const isDeptManager = roles?.some((r: any) => r.role === 'department_manager');
+  if (!isDeptManager) throw new Error('Not authorised');
+
+  // Verify the target employee is in the same department
+  const { data: targetEmp } = await service
+    .from('employees')
+    .select('id, department_id, full_name_ar, full_name_en')
+    .eq('id', employeeId)
+    .single();
+  if (!targetEmp) throw new Error('Employee not found');
+  if (targetEmp.department_id !== employee.department_id) throw new Error('Employee must be in your department');
+
+  // Get current step order to know where to insert
+  const { data: currentStep } = await service
+    .from('approval_steps')
+    .select('step_order, request_id')
+    .eq('id', stepId)
+    .single();
+  if (!currentStep) throw new Error('Step not found');
+
+  // Mark current step as delegated
+  await service.from('approval_steps')
+    .update({ status: 'delegated', completed_at: new Date().toISOString(), note: `مُعيَّن إلى موظف` })
+    .eq('id', stepId);
+
+  // Shift all pending steps with higher order
+  const { data: laterSteps } = await service
+    .from('approval_steps')
+    .select('id, step_order')
+    .eq('request_id', requestId)
+    .eq('status', 'pending')
+    .gt('step_order', currentStep.step_order);
+
+  for (const s of laterSteps || []) {
+    await service.from('approval_steps')
+      .update({ step_order: s.step_order + 2 })
+      .eq('id', s.id);
+  }
+
+  // Insert employee step right after current
+  await service.from('approval_steps').insert({
+    request_id: requestId,
+    step_order: currentStep.step_order + 1,
+    approver_id: employeeId,
+    approver_role: 'employee',
+    is_mandatory: true,
+    status: 'pending',
+  });
+
+  // Insert manager re-sign step after employee
+  await service.from('approval_steps').insert({
+    request_id: requestId,
+    step_order: currentStep.step_order + 2,
+    approver_id: employee.id,
+    approver_role: 'department_manager',
+    is_mandatory: true,
+    status: 'pending',
+  });
+
+  // Log the assignment
+  await service.from('request_actions').insert({
+    request_id: requestId,
+    action: 'delegated_to_employee',
+    actor_id: employee.id,
+    actor_role: 'department_manager',
+    rationale: `تم تعيين الطلب للموظف: ${targetEmp.full_name_ar}`,
+    from_status: 'under_review',
+    to_status: 'under_review',
+  });
+
+  // Notify the assigned employee
+  const { data: req } = await service.from('requests').select('subject').eq('id', requestId).single();
+  if (req) {
+    await service.from('notifications').insert({
+      recipient_id: employeeId,
+      request_id: requestId,
+      channel: 'in_app',
+      type: 'action_required',
+      title_ar: 'تم تعيين طلب لك',
+      title_en: 'Request Assigned to You',
+      body_ar: `تم تعيينك للعمل على طلب: ${req.subject}`,
+      body_en: `You have been assigned to a request: ${req.subject}`,
+      action_url: `/dashboard/requests/${requestId}`,
+      sent_at: new Date().toISOString(),
+    });
+  }
 }

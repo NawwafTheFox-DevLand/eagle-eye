@@ -18,7 +18,7 @@ const t = {
   },
 };
 
-export default function GRDashboardClient({ stats, alerts }: any) {
+export default function GRDashboardClient({ stats, alerts, isReadOnly }: any) {
   const { lang } = useLanguage();
   const L = t[lang];
 
@@ -28,6 +28,12 @@ export default function GRDashboardClient({ stats, alerts }: any) {
         <h1 className="text-2xl font-bold text-slate-900">{L.title}</h1>
         <p className="text-sm text-slate-500 mt-1">{L.subtitle}</p>
       </div>
+      {isReadOnly && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 text-sm">
+          <span>🔒</span>
+          <span>{lang === 'ar' ? 'وضع العرض فقط' : 'View Only Mode'}</span>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KPI title={L.entities} value={stats.totalEntities} icon="🏢" bg="bg-blue-50 border-blue-100" />

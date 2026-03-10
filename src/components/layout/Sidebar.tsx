@@ -37,6 +37,7 @@ const navSections = [
     { href: '/dashboard/profile', icon: '👤', label: { ar: 'الملف الشخصي', en: 'Profile' } },
     { href: '/dashboard/delegation', icon: '🔄', label: { ar: 'التفويض', en: 'Delegation' } },
     { href: '/dashboard/notifications', icon: '🔔', label: { ar: 'الإشعارات', en: 'Notifications' } },
+    { href: '/dashboard/org-tree', icon: '🏛️', label: { ar: 'الهيكل التنظيمي', en: 'Org Structure' } },
     { href: '/dashboard/settings', icon: '⚙️', label: { ar: 'الإعدادات', en: 'Settings' } },
   ]},
 ];

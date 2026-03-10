@@ -23,7 +23,7 @@ const statusColors: Record<string, string> = {
   cancelled: 'bg-slate-100 text-slate-500',
 };
 
-export default function TasksClient({ tasks, entities, employees }: any) {
+export default function TasksClient({ tasks, entities, employees, isReadOnly }: any) {
   const { lang } = useLanguage();
   const router = useRouter();
   const [showNew, setShowNew] = useState(false);
@@ -59,17 +59,25 @@ export default function TasksClient({ tasks, entities, employees }: any) {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {isReadOnly && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 text-sm">
+          <span>🔒</span>
+          <span>{lang === 'ar' ? 'وضع العرض فقط' : 'View Only Mode'}</span>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">{lang === 'ar' ? 'مهام العلاقات الحكومية' : 'GR Tasks'}</h1>
           <p className="text-sm text-slate-500 mt-1">{filtered.length} {lang === 'ar' ? 'مهمة' : 'tasks'}</p>
         </div>
-        <button onClick={() => setShowNew(!showNew)} className="btn-primary text-sm">
-          {showNew ? (lang === 'ar' ? 'إلغاء' : 'Cancel') : (lang === 'ar' ? '➕ مهمة جديدة' : '➕ New Task')}
-        </button>
+        {!isReadOnly && (
+          <button onClick={() => setShowNew(!showNew)} className="btn-primary text-sm">
+            {showNew ? (lang === 'ar' ? 'إلغاء' : 'Cancel') : (lang === 'ar' ? '➕ مهمة جديدة' : '➕ New Task')}
+          </button>
+        )}
       </div>
 
-      {showNew && (
+      {!isReadOnly && showNew && (
         <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-4 animate-slide-up">
           {error && <div className="px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -146,7 +154,7 @@ export default function TasksClient({ tasks, entities, employees }: any) {
                     <p className="text-xs text-slate-500 mt-0.5">{type?.[lang] || t.task_type} • {entity?.name_ar || '—'} • {assignee?.full_name_ar || '—'}</p>
                   </div>
                   {t.due_date && <span className="text-xs text-slate-400">{t.due_date}</span>}
-                  {t.status !== 'completed' && t.status !== 'cancelled' && (
+                  {!isReadOnly && t.status !== 'completed' && t.status !== 'cancelled' && (
                     <button onClick={() => handleStatusChange(t.id, 'completed')} className="text-xs text-emerald-600 hover:bg-emerald-50 px-3 py-1.5 rounded-lg font-medium">
                       {lang === 'ar' ? 'إكمال' : 'Complete'}
                     </button>
