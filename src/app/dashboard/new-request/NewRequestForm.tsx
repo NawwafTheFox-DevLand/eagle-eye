@@ -68,9 +68,28 @@ const labels = {
   },
 };
 
-export default function NewRequestForm({ employee, configs, companies, departments }: any) {
+const typeVisibility: Record<string, string[]> = {
+  general_internal:      ['employee', 'department_manager', 'company_director', 'holding_ceo', 'super_admin'],
+  cross_department:      ['employee', 'department_manager', 'company_director', 'holding_ceo', 'super_admin'],
+  leave_approval:        ['employee', 'department_manager', 'company_director', 'holding_ceo', 'super_admin'],
+  intercompany:          ['department_manager', 'company_director', 'holding_ceo', 'super_admin'],
+  fund_disbursement:     ['department_manager', 'company_director', 'holding_ceo', 'super_admin'],
+  create_position:       ['department_manager', 'company_director', 'holding_ceo', 'super_admin'],
+  promotion:             ['department_manager', 'company_director', 'holding_ceo', 'super_admin'],
+  demotion_disciplinary: ['department_manager', 'company_director', 'holding_ceo', 'super_admin'],
+  create_department:     ['company_director', 'holding_ceo', 'super_admin'],
+  create_company:        ['holding_ceo', 'super_admin'],
+};
+
+export default function NewRequestForm({ employee, configs, companies, departments, roleLevel = 'employee' }: any) {
   const { lang } = useLanguage();
   const L = labels[lang];
+
+  const visibleConfigs = configs.filter((c: any) => {
+    const allowed = typeVisibility[c.request_type];
+    if (!allowed) return true;
+    return allowed.includes(roleLevel);
+  });
   const [step, setStep] = useState<'type' | 'form'>('type');
   const [selectedType, setSelectedType] = useState<any>(null);
   const [isPending, startTransition] = useTransition();
@@ -166,7 +185,7 @@ export default function NewRequestForm({ employee, configs, companies, departmen
 
   if (step === 'type') return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      {configs.map((c: any) => (
+      {visibleConfigs.map((c: any) => (
         <button key={c.request_type} onClick={() => selectType(c)}
           className="flex items-center gap-4 p-5 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:border-eagle-200 transition-all text-start group">
           <span className="text-2xl">{typeIcons[c.request_type] || '📋'}</span>
