@@ -60,14 +60,7 @@ export default function LoginPage() {
         <div className="absolute -bottom-32 -left-32 w-96 h-96 rounded-full bg-gold-400/10 blur-3xl" />
         <div className="relative flex flex-col items-center justify-center w-full px-16 text-white">
           <div className="mb-8 animate-float">
-            <div className="w-32 h-32 rounded-3xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center shadow-2xl">
-              <svg width="80" height="80" viewBox="0 0 512 512" fill="none">
-                <circle cx="256" cy="270" r="30" fill="#D4A843" opacity="0.9"/>
-                <circle cx="256" cy="270" r="14" fill="#0A3558"/>
-                <path d="M 256 140 Q 170 120, 80 180 Q 50 200, 35 240 Q 100 195, 170 200 Q 200 220, 220 245 Z" fill="white" opacity="0.9"/>
-                <path d="M 256 140 Q 342 120, 432 180 Q 462 200, 477 240 Q 412 195, 342 200 Q 312 220, 292 245 Z" fill="white" opacity="0.9"/>
-              </svg>
-            </div>
+            <img src="/logo.png" alt="Eagle Eye" className="w-20 h-20 rounded-2xl shadow-2xl object-contain" />
           </div>
           <h1 className="text-5xl font-bold mb-2 tracking-wide">عين النسر</h1>
           <p className="text-xl font-light text-white/80 mb-1 tracking-wider">EAGLE EYE</p>
@@ -90,13 +83,7 @@ export default function LoginPage() {
         </button>
         <div className="w-full max-w-md">
           <div className="lg:hidden flex flex-col items-center mb-10">
-            <div className="w-16 h-16 rounded-2xl eagle-gradient flex items-center justify-center shadow-xl mb-4">
-              <svg width="36" height="36" viewBox="0 0 512 512" fill="none">
-                <circle cx="256" cy="270" r="30" fill="#D4A843"/><circle cx="256" cy="270" r="14" fill="#0A3558"/>
-                <path d="M 256 140 Q 170 120, 80 180 Q 50 200, 35 240 Q 100 195, 170 200 Q 200 220, 220 245 Z" fill="white"/>
-                <path d="M 256 140 Q 342 120, 432 180 Q 462 200, 477 240 Q 412 195, 342 200 Q 312 220, 292 245 Z" fill="white"/>
-              </svg>
-            </div>
+            <img src="/logo.png" alt="Eagle Eye" className="w-9 h-9 rounded-xl shadow-sm object-contain mb-4" />
             <h2 className="text-2xl font-bold text-eagle-800">{t.title}</h2>
             <p className="text-sm text-slate-500">{t.company}</p>
           </div>

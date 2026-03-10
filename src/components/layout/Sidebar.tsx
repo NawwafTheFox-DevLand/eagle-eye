@@ -51,13 +51,11 @@ export default function Sidebar({ employee }: SidebarProps) {
   return (
     <aside className={cn('flex flex-col eagle-gradient text-white transition-all duration-300', collapsed ? 'w-20' : 'w-72')}>
       <div className="flex items-center gap-3 px-6 py-5 border-b border-white/10">
-        <div className="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center shrink-0">
-          <svg width="24" height="24" viewBox="0 0 512 512" fill="none">
-            <circle cx="256" cy="270" r="30" fill="#D4A843"/><circle cx="256" cy="270" r="14" fill="#0A3558"/>
-            <path d="M 256 140 Q 170 120, 80 180 Q 50 200, 35 240 Q 100 195, 170 200 Q 200 220, 220 245 Z" fill="white"/>
-            <path d="M 256 140 Q 342 120, 432 180 Q 462 200, 477 240 Q 412 195, 342 200 Q 312 220, 292 245 Z" fill="white"/>
-          </svg>
-        </div>
+        <img
+          src="/logo.png"
+          alt="Eagle Eye"
+          className={cn('rounded-xl shadow-sm object-contain shrink-0', collapsed ? 'w-8 h-8' : 'w-10 h-10')}
+        />
         {!collapsed && <div><h1 className="font-bold text-base leading-tight">{lang === 'ar' ? 'عين النسر' : 'Eagle Eye'}</h1><p className="text-[10px] text-white/50 tracking-wider">EAGLE EYE</p></div>}
         <button onClick={() => setCollapsed(!collapsed)} className="ms-auto text-white/40 hover:text-white/80 transition-colors text-sm">
           {collapsed ? '☰' : '◁'}
