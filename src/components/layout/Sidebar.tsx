@@ -26,7 +26,7 @@ const navSections = [
     { href: '/dashboard/gr/alerts', icon: '🔔', label: { ar: 'التنبيهات', en: 'Alerts' } },
     { href: '/dashboard/gr/performance', icon: '📊', label: { ar: 'الأداء', en: 'Performance' } },
   ]},
-  { title: { ar: 'الإدارة', en: 'Administration' }, roles: ['super_admin', 'company_admin', 'ceo'], items: [
+  { title: { ar: 'الإدارة', en: 'Administration' }, roles: ['super_admin'], items: [
     { href: '/dashboard/admin/employees', icon: '👤', label: { ar: 'الموظفين', en: 'Employees' } },
     { href: '/dashboard/admin/departments', icon: '🏗️', label: { ar: 'الأقسام', en: 'Departments' } },
     { href: '/dashboard/admin/roles', icon: '🔑', label: { ar: 'الصلاحيات', en: 'Roles' } },

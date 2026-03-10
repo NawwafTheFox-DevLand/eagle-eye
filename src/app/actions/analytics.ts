@@ -117,3 +117,140 @@ export async function getDashboardAnalytics() {
     evidenceCompleteness,
   };
 }
+
+export async function getScopedAnalytics(filters: {
+  companyId?: string;
+  departmentId?: string;
+  employeeId?: string;
+}) {
+  const service = await createServiceClient();
+
+  let query = service
+    .from('requests')
+    .select('id, request_type, status, priority, sla_breached, submitted_at, completed_at, created_at, origin_company_id, origin_dept_id, requester_id, amount')
+    .order('created_at', { ascending: false })
+    .limit(500);
+
+  if (filters.employeeId) {
+    query = query.eq('requester_id', filters.employeeId);
+  } else if (filters.departmentId) {
+    query = query.eq('origin_dept_id', filters.departmentId);
+  } else if (filters.companyId) {
+    query = query.eq('origin_company_id', filters.companyId);
+  }
+
+  const { data: allRequests } = await query;
+  const requests = allRequests || [];
+  const now = new Date();
+  const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const statusCounts: Record<string, number> = {};
+  requests.forEach(r => { statusCounts[r.status] = (statusCounts[r.status] || 0) + 1; });
+
+  const typeCounts: Record<string, number> = {};
+  requests.forEach(r => { typeCounts[r.request_type] = (typeCounts[r.request_type] || 0) + 1; });
+
+  const monthlyData: { month: string; count: number; completed: number; breached: number }[] = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    const monthLabel = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    const monthReqs = requests.filter(r => {
+      const rd = new Date(r.created_at);
+      return rd >= d && rd <= monthEnd;
+    });
+    monthlyData.push({
+      month: monthLabel,
+      count: monthReqs.length,
+      completed: monthReqs.filter(r => ['completed', 'approved'].includes(r.status)).length,
+      breached: monthReqs.filter(r => r.sla_breached).length,
+    });
+  }
+
+  // Department workload (shown when not filtered to employee level)
+  let deptWorkload: any[] = [];
+  if (!filters.employeeId) {
+    const deptIds = [...new Set(requests.map(r => r.origin_dept_id).filter(Boolean))];
+    if (deptIds.length > 0) {
+      const { data: depts } = await service.from('departments').select('id, code, name_ar, name_en').in('id', deptIds);
+      deptWorkload = (depts || []).map(dept => {
+        const deptReqs = requests.filter(r => r.origin_dept_id === dept.id);
+        return {
+          code: dept.code,
+          name_ar: dept.name_ar,
+          name_en: dept.name_en,
+          total: deptReqs.length,
+          pending: deptReqs.filter(r => ['submitted', 'under_review', 'pending_clarification'].includes(r.status)).length,
+          completed: deptReqs.filter(r => ['completed', 'approved'].includes(r.status)).length,
+        };
+      }).filter(d => d.total > 0).sort((a, b) => b.total - a.total);
+    }
+  }
+
+  // Employee performance table (shown when filtered to department level)
+  let employeePerformance: any[] = [];
+  if (filters.departmentId && !filters.employeeId) {
+    const empIds = [...new Set(requests.map(r => r.requester_id).filter(Boolean))];
+    if (empIds.length > 0) {
+      const { data: emps } = await service.from('employees').select('id, full_name_ar, full_name_en').in('id', empIds);
+      employeePerformance = (emps || []).map(emp => {
+        const empReqs = requests.filter(r => r.requester_id === emp.id);
+        const completedR = empReqs.filter(r => r.completed_at && r.submitted_at);
+        const avgMs = completedR.length > 0
+          ? completedR.reduce((s, r) => s + (new Date(r.completed_at!).getTime() - new Date(r.submitted_at!).getTime()), 0) / completedR.length
+          : 0;
+        const approved = empReqs.filter(r => ['approved', 'completed'].includes(r.status)).length;
+        const rejected = empReqs.filter(r => r.status === 'rejected').length;
+        const decided = approved + rejected;
+        return {
+          id: emp.id,
+          full_name_ar: emp.full_name_ar,
+          full_name_en: emp.full_name_en,
+          requestCount: empReqs.length,
+          avgCycleHours: Math.round(avgMs / (1000 * 60 * 60)),
+          approvalRate: decided > 0 ? Math.round((approved / decided) * 100) : null,
+          pending: empReqs.filter(r => ['submitted', 'under_review', 'pending_clarification'].includes(r.status)).length,
+        };
+      }).sort((a, b) => b.requestCount - a.requestCount);
+    }
+  }
+
+  const completedReqs = requests.filter(r => r.completed_at && r.submitted_at);
+  const avgCycleMs = completedReqs.length > 0
+    ? completedReqs.reduce((sum, r) => sum + (new Date(r.completed_at!).getTime() - new Date(r.submitted_at!).getTime()), 0) / completedReqs.length
+    : 0;
+  const avgCycleHours = Math.round(avgCycleMs / (1000 * 60 * 60));
+
+  const approvedCount = statusCounts['approved'] || 0;
+  const rejectedCount = statusCounts['rejected'] || 0;
+  const totalDecided = approvedCount + rejectedCount;
+  const approvalRate = totalDecided > 0 ? Math.round((approvedCount / totalDecided) * 100) : 0;
+  const rejectionRate = totalDecided > 0 ? Math.round((rejectedCount / totalDecided) * 100) : 0;
+
+  const financialExposure = requests
+    .filter(r => r.request_type === 'fund_disbursement' && ['submitted', 'under_review', 'pending_clarification'].includes(r.status))
+    .reduce((s, r) => s + (parseFloat((r as any).amount) || 0), 0);
+
+  const pendingCount = (statusCounts['submitted'] || 0) + (statusCounts['under_review'] || 0) + (statusCounts['pending_clarification'] || 0);
+
+  return {
+    totalRequests: requests.length,
+    thisMonthRequests: requests.filter(r => new Date(r.created_at) >= thisMonth).length,
+    pendingCount,
+    completedCount: (statusCounts['completed'] || 0) + (statusCounts['approved'] || 0),
+    rejectedCount,
+    breachedCount: requests.filter(r => r.sla_breached).length,
+    avgCycleHours,
+    statusCounts,
+    typeCounts,
+    monthlyData,
+    deptWorkload,
+    employeePerformance,
+    approvalRate,
+    rejectionRate,
+    financialExposure,
+    returnCount: 0,
+    totalEmployees: 0,
+    totalDepartments: deptWorkload.length,
+  };
+}
