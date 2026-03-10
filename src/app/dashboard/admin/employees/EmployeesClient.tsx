@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import * as XLSX from 'xlsx';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { toggleEmployeeActive } from '@/app/actions/admin';
 import { useRouter } from 'next/navigation';
@@ -32,11 +33,38 @@ export default function EmployeesClient({ employees, companies, departments }: a
     router.refresh();
   }
 
+  function exportToExcel() {
+    const isAr = lang === 'ar';
+    const rows = filtered.map((e: any) => {
+      const co = companyMap.get(e.company_id) as any;
+      const dept = deptMap.get(e.department_id) as any;
+      return {
+        [isAr ? 'الرمز'         : 'Code']:        e.employee_code,
+        [isAr ? 'الاسم بالعربي' : 'Arabic Name']: e.full_name_ar,
+        [isAr ? 'الاسم بالإنجليزي': 'English Name']: e.full_name_en ?? '',
+        [isAr ? 'الشركة'        : 'Company']:     isAr ? (co?.name_ar ?? '') : ((co?.name_en || co?.name_ar) ?? ''),
+        [isAr ? 'القسم'         : 'Department']:  isAr ? (dept?.name_ar ?? '') : ((dept?.name_en || dept?.name_ar) ?? ''),
+        [isAr ? 'الدرجة'        : 'Grade']:        e.grade ?? '',
+        [isAr ? 'المسمى الوظيفي': 'Title']:        e.title_ar ?? '',
+        [isAr ? 'الحالة'        : 'Status']:       e.is_active ? (isAr ? 'نشط' : 'Active') : (isAr ? 'غير نشط' : 'Inactive'),
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, isAr ? 'الموظفون' : 'Employees');
+    XLSX.writeFile(wb, `eagle-eye-employees-${new Date().toISOString().split('T')[0]}.xlsx`);
+  }
+
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">{L.title}</h1>
-        <p className="text-sm text-slate-500 mt-1">{filtered.length} {L.total}</p>
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">{L.title}</h1>
+          <p className="text-sm text-slate-500 mt-1">{filtered.length} {L.total}</p>
+        </div>
+        <button onClick={exportToExcel} className="px-4 py-2.5 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors">
+          {lang === 'ar' ? '⬇️ تصدير Excel' : '⬇️ Export Excel'}
+        </button>
       </div>
 
       <div className="flex gap-3">

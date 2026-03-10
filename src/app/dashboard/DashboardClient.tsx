@@ -249,6 +249,63 @@ export default function DashboardClient({
         </div>
       )}
 
+      {/* ── KPI Row 3 (CEO/super_admin deep metrics) ─────── */}
+      {isCEO && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className={`kpi-card ${
+            (a.approvalRate ?? 0) >= 80 ? 'bg-emerald-50 border-emerald-100' :
+            (a.approvalRate ?? 0) >= 50 ? 'bg-amber-50 border-amber-100' : 'bg-red-50 border-red-100'
+          }`}>
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs font-medium text-slate-500 mb-1">{lang === 'ar' ? 'معدل الموافقة' : 'Approval Rate'}</p>
+                <p className={`text-3xl font-bold ${
+                  (a.approvalRate ?? 0) >= 80 ? 'text-emerald-700' :
+                  (a.approvalRate ?? 0) >= 50 ? 'text-amber-700' : 'text-red-700'
+                }`}>{a.approvalRate ?? 0}%</p>
+              </div>
+              <span className="text-2xl">📈</span>
+            </div>
+          </div>
+          <div className={`kpi-card ${
+            (a.rejectionRate ?? 0) <= 10 ? 'bg-emerald-50 border-emerald-100' :
+            (a.rejectionRate ?? 0) <= 30 ? 'bg-amber-50 border-amber-100' : 'bg-red-50 border-red-100'
+          }`}>
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs font-medium text-slate-500 mb-1">{lang === 'ar' ? 'معدل الرفض' : 'Rejection Rate'}</p>
+                <p className={`text-3xl font-bold ${
+                  (a.rejectionRate ?? 0) <= 10 ? 'text-emerald-700' :
+                  (a.rejectionRate ?? 0) <= 30 ? 'text-amber-700' : 'text-red-700'
+                }`}>{a.rejectionRate ?? 0}%</p>
+              </div>
+              <span className="text-2xl">📉</span>
+            </div>
+          </div>
+          <KPI
+            title={lang === 'ar' ? 'التعرض المالي' : 'Financial Exposure'}
+            value={a.financialExposure > 0 ? new Intl.NumberFormat(lang === 'ar' ? 'ar-SA' : 'en-US', { style: 'currency', currency: 'SAR', maximumFractionDigits: 0 }).format(a.financialExposure) : '—'}
+            icon="💰"
+            bg="bg-orange-50 border-orange-100"
+          />
+          <div className={`kpi-card ${
+            (a.evidenceCompleteness ?? 0) >= 80 ? 'bg-emerald-50 border-emerald-100' :
+            (a.evidenceCompleteness ?? 0) >= 50 ? 'bg-amber-50 border-amber-100' : 'bg-red-50 border-red-100'
+          }`}>
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs font-medium text-slate-500 mb-1">{lang === 'ar' ? 'اكتمال المستندات' : 'Evidence Rate'}</p>
+                <p className={`text-3xl font-bold ${
+                  (a.evidenceCompleteness ?? 0) >= 80 ? 'text-emerald-700' :
+                  (a.evidenceCompleteness ?? 0) >= 50 ? 'text-amber-700' : 'text-red-700'
+                }`}>{a.evidenceCompleteness ?? 0}%</p>
+              </div>
+              <span className="text-2xl">📎</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── CEO Upcoming Approvals ────────────────────────── */}
       {isCEO && upcomingApprovals.length > 0 && (
         <div className="bg-white rounded-2xl border border-amber-100 shadow-sm p-6">

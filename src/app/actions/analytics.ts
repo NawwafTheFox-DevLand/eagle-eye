@@ -129,7 +129,7 @@ export async function getScopedAnalytics(filters: {
     .from('requests')
     .select('id, request_type, status, priority, sla_breached, submitted_at, completed_at, created_at, origin_company_id, origin_dept_id, requester_id, amount')
     .order('created_at', { ascending: false })
-    .limit(500);
+    .limit(1000);
 
   if (filters.employeeId) {
     query = query.eq('requester_id', filters.employeeId);
@@ -143,6 +143,17 @@ export async function getScopedAnalytics(filters: {
   const requests = allRequests || [];
   const now = new Date();
   const thisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  // Fetch evidence and sent_back actions for this scope
+  const requestIds = requests.map(r => r.id);
+  const [{ data: scopedEvidence }, { data: scopedSentBack }] = await Promise.all([
+    requestIds.length > 0
+      ? service.from('evidence').select('request_id').in('request_id', requestIds)
+      : Promise.resolve({ data: [] as any[] }),
+    requestIds.length > 0
+      ? service.from('request_actions').select('request_id').eq('action', 'sent_back').in('request_id', requestIds)
+      : Promise.resolve({ data: [] as any[] }),
+  ]);
 
   const statusCounts: Record<string, number> = {};
   requests.forEach(r => { statusCounts[r.status] = (statusCounts[r.status] || 0) + 1; });
@@ -233,6 +244,15 @@ export async function getScopedAnalytics(filters: {
 
   const pendingCount = (statusCounts['submitted'] || 0) + (statusCounts['under_review'] || 0) + (statusCounts['pending_clarification'] || 0);
 
+  // Evidence completeness for scoped requests
+  const completedIds = new Set(requests.filter(r => ['completed', 'approved'].includes(r.status)).map(r => r.id));
+  const evidenceRequestIds = new Set((scopedEvidence || []).map((e: any) => e.request_id));
+  const completedWithEvidence = [...completedIds].filter(id => evidenceRequestIds.has(id)).length;
+  const evidenceCompleteness = completedIds.size > 0 ? Math.round((completedWithEvidence / completedIds.size) * 100) : 0;
+
+  // Return/clarification count (unique requests that were sent back at least once)
+  const returnCount = new Set((scopedSentBack || []).map((a: any) => a.request_id)).size;
+
   return {
     totalRequests: requests.length,
     thisMonthRequests: requests.filter(r => new Date(r.created_at) >= thisMonth).length,
@@ -249,7 +269,8 @@ export async function getScopedAnalytics(filters: {
     approvalRate,
     rejectionRate,
     financialExposure,
-    returnCount: 0,
+    returnCount,
+    evidenceCompleteness,
     totalEmployees: 0,
     totalDepartments: deptWorkload.length,
   };

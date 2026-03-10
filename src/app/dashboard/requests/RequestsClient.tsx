@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import * as XLSX from 'xlsx';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { getStatusColor, getPriorityColor, formatDate } from '@/lib/utils';
 
@@ -110,29 +111,23 @@ export default function RequestsClient({ requests, role, companies, departments 
     },
   }[lang];
 
-  function exportToCSV() {
-    const headers = lang === 'ar'
-      ? ['رقم الطلب', 'الموضوع', 'النوع', 'الحالة', 'الأولوية', 'مقدم الطلب', 'الشركة', 'تاريخ الإنشاء']
-      : ['Request #', 'Subject', 'Type', 'Status', 'Priority', 'Requester', 'Company', 'Created'];
-    const rowData = filtered.map(r => [
-      r.request_number, r.subject,
-      typeLabels[r.request_type]?.[lang] ?? r.request_type,
-      statusLabels[r.status]?.[lang] ?? r.status,
-      priorityLabels[r.priority]?.[lang] ?? r.priority,
-      lang === 'ar' ? r.requester_name_ar : (r.requester_name_en || r.requester_name_ar),
-      lang === 'ar' ? r.company_name_ar : (r.company_name_en || r.company_name_ar),
-      r.created_at,
-    ]);
-    const csv = [headers, ...rowData]
-      .map(row => row.map((v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `eagle-eye-requests-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  function exportToExcel() {
+    const isAr = lang === 'ar';
+    const rows = filtered.map(r => ({
+      [isAr ? 'رقم الطلب'    : 'Request #']:   r.request_number,
+      [isAr ? 'الموضوع'      : 'Subject']:      r.subject,
+      [isAr ? 'النوع'        : 'Type']:         typeLabels[r.request_type]?.[lang] ?? r.request_type,
+      [isAr ? 'الحالة'       : 'Status']:       statusLabels[r.status]?.[lang] ?? r.status,
+      [isAr ? 'الأولوية'     : 'Priority']:     priorityLabels[r.priority]?.[lang] ?? r.priority,
+      [isAr ? 'مقدم الطلب'   : 'Requester']:    isAr ? r.requester_name_ar : (r.requester_name_en || r.requester_name_ar),
+      [isAr ? 'الشركة'       : 'Company']:      isAr ? r.company_name_ar  : (r.company_name_en  || r.company_name_ar),
+      [isAr ? 'القسم'        : 'Department']:   r.dept_id ?? '—',
+      [isAr ? 'تاريخ الإنشاء': 'Created']:      r.created_at,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, isAr ? 'الطلبات' : 'Requests');
+    XLSX.writeFile(wb, `eagle-eye-requests-${new Date().toISOString().split('T')[0]}.xlsx`);
   }
 
   const hasFilters = filterStatus || filterType || filterCompany || filterDept;
@@ -145,8 +140,8 @@ export default function RequestsClient({ requests, role, companies, departments 
           <p className="text-sm text-slate-500 mt-1">{t.count(filtered.length)}{hasFilters ? ` / ${requests.length}` : ''}</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={exportToCSV} className="px-4 py-2.5 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors">
-            {lang === 'ar' ? '⬇️ تصدير CSV' : '⬇️ Export CSV'}
+          <button onClick={exportToExcel} className="px-4 py-2.5 rounded-xl text-sm font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors">
+            {lang === 'ar' ? '⬇️ تصدير Excel' : '⬇️ Export Excel'}
           </button>
           <Link href="/dashboard/new-request" className="btn-primary text-sm flex items-center gap-2">
             <span>➕</span> {t.newRequest}
