@@ -10,9 +10,9 @@ interface SidebarProps { employee: any; }
 const navSections = [
   { title: { ar: 'الرئيسية', en: 'Main' }, items: [
     { href: '/dashboard', icon: '◫', label: { ar: 'لوحة القيادة', en: 'Dashboard' } },
+    { href: '/dashboard/new-request', icon: '➕', label: { ar: 'طلب جديد', en: 'New Request' } },
     { href: '/dashboard/requests', icon: '📋', label: { ar: 'الطلبات', en: 'Requests' } },
     { href: '/dashboard/approvals', icon: '✅', label: { ar: 'الموافقات', en: 'Approvals' } },
-    { href: '/dashboard/new-request', icon: '➕', label: { ar: 'طلب جديد', en: 'New Request' } },
   ]},
   { title: { ar: 'العلاقات الحكومية', en: 'Gov Relations' }, roles: ['gr_employee', 'gr_manager', 'super_admin', 'ceo'], items: [
     { href: '/dashboard/gr', icon: '🛡️', label: { ar: 'لوحة GR', en: 'GR Dashboard' } },
@@ -22,13 +22,15 @@ const navSections = [
     { href: '/dashboard/gr/violations', icon: '⚠️', label: { ar: 'المخالفات', en: 'Violations' } },
     { href: '/dashboard/gr/committees', icon: '👥', label: { ar: 'اللجان', en: 'Committees' } },
   ]},
-  { title: { ar: 'الإدارة', en: 'Admin' }, roles: ['super_admin', 'company_admin', 'ceo'], items: [
+  { title: { ar: 'الإدارة', en: 'Administration' }, roles: ['super_admin', 'company_admin', 'ceo'], items: [
     { href: '/dashboard/admin/employees', icon: '👤', label: { ar: 'الموظفين', en: 'Employees' } },
     { href: '/dashboard/admin/departments', icon: '🏗️', label: { ar: 'الأقسام', en: 'Departments' } },
+    { href: '/dashboard/admin/roles', icon: '🔑', label: { ar: 'الصلاحيات', en: 'Roles' } },
     { href: '/dashboard/admin/sla', icon: '⏱️', label: { ar: 'إعدادات SLA', en: 'SLA Config' } },
     { href: '/dashboard/admin/audit', icon: '📖', label: { ar: 'سجل التدقيق', en: 'Audit Log' } },
   ]},
-  { title: { ar: 'الحساب', en: 'Account' }, items: [
+  { title: { ar: 'حسابي', en: 'My Account' }, items: [
+    { href: '/dashboard/profile', icon: '👤', label: { ar: 'الملف الشخصي', en: 'Profile' } },
     { href: '/dashboard/delegation', icon: '🔄', label: { ar: 'التفويض', en: 'Delegation' } },
     { href: '/dashboard/notifications', icon: '🔔', label: { ar: 'الإشعارات', en: 'Notifications' } },
     { href: '/dashboard/settings', icon: '⚙️', label: { ar: 'الإعدادات', en: 'Settings' } },
