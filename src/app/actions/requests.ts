@@ -395,30 +395,163 @@ export async function approveRequest(requestId: string, note: string, stepId: st
     .order('step_order', { ascending: true });
 
   if (!pendingSteps || pendingSteps.length === 0) {
-    // All approved — finalise
-    await service.from('requests').update({ status: 'approved' }).eq('id', requestId);
-    await service.from('request_actions').insert({
-      request_id:  requestId,
-      action:      'approved',
-      actor_id:    employee.id,
-      actor_role:  actorRole,
-      from_status: 'under_review',
-      to_status:   'approved',
-      note:        'تمت الموافقة على جميع الخطوات',
-    });
+    // All approval steps done — move to execution phase
+    const { data: request } = await service
+      .from('requests')
+      .select('id, request_type, destination_dept_id, destination_company_id, priority, confidentiality, amount, subject, requester_id')
+      .eq('id', requestId)
+      .single();
 
-    // Notify requester
-    const { data: req } = await service.from('requests').select('requester_id, subject').eq('id', requestId).single();
-    if (req) {
-      await createNotification(service, {
-        recipientId: req.requester_id,
-        requestId,
-        type:    'status_update',
-        titleAr: 'تمت الموافقة على طلبك',
-        titleEn: 'Your Request Was Approved',
-        bodyAr:  `تمت الموافقة على طلبك: ${req.subject}`,
-        bodyEn:  `Your request has been approved: ${req.subject}`,
+    if (request && request.destination_dept_id) {
+      // Check if routine
+      const { data: config } = await service
+        .from('request_type_configs')
+        .select('is_routine_eligible')
+        .eq('request_type', request.request_type)
+        .single();
+
+      const isRoutine =
+        config?.is_routine_eligible === true &&
+        (!request.amount || parseFloat(request.amount) === 0) &&
+        request.confidentiality === 'normal' &&
+        request.priority !== 'urgent';
+
+      if (isRoutine) {
+        // Auto-assign to least-busy employee in destination department (exclude dept head)
+        const { data: deptHead } = await service
+          .from('departments')
+          .select('head_employee_id')
+          .eq('id', request.destination_dept_id)
+          .single();
+
+        const { data: deptEmployees } = await service
+          .from('employees')
+          .select('id')
+          .eq('department_id', request.destination_dept_id)
+          .eq('is_active', true)
+          .neq('id', deptHead?.head_employee_id || '');
+
+        let assigneeId: string | null = null;
+        if (deptEmployees && deptEmployees.length > 0) {
+          const empIds = deptEmployees.map((e: any) => e.id);
+          const counts: Record<string, number> = {};
+          empIds.forEach((id: string) => { counts[id] = 0; });
+
+          const { data: openAssignments } = await service
+            .from('requests')
+            .select('assigned_to')
+            .in('assigned_to', empIds)
+            .in('status', ['in_progress', 'assigned_to_employee']);
+
+          (openAssignments || []).forEach((a: any) => {
+            if (a.assigned_to && counts[a.assigned_to] !== undefined) counts[a.assigned_to]++;
+          });
+
+          assigneeId = Object.entries(counts).sort((a, b) => a[1] - b[1])[0]?.[0] || empIds[0];
+        }
+
+        if (assigneeId) {
+          await service.from('requests').update({
+            status: 'in_progress',
+            assigned_to: assigneeId,
+            execution_started_at: new Date().toISOString(),
+          }).eq('id', requestId);
+
+          await service.from('request_actions').insert({
+            request_id:  requestId,
+            action:      'auto_assigned',
+            actor_id:    employee.id,
+            actor_role:  'system',
+            from_status: 'under_review',
+            to_status:   'in_progress',
+            note:        'تم التعيين تلقائياً — طلب روتيني',
+          });
+
+          // Notify assigned employee
+          await createNotification(service, {
+            recipientId: assigneeId,
+            requestId,
+            type:    'action_required',
+            titleAr: 'تم تعيين طلب لك',
+            titleEn: 'Request Assigned to You',
+            bodyAr:  `تم تعيينك تلقائياً للعمل على طلب: ${request.subject}`,
+            bodyEn:  `You have been auto-assigned to a request: ${request.subject}`,
+          });
+        } else {
+          // No employees — fall back to dept manager flow
+          await service.from('requests').update({ status: 'pending_execution' }).eq('id', requestId);
+        }
+      } else {
+        // Non-routine — notify destination dept manager
+        await service.from('requests').update({ status: 'pending_execution' }).eq('id', requestId);
+
+        await service.from('request_actions').insert({
+          request_id:  requestId,
+          action:      'pending_execution',
+          actor_id:    employee.id,
+          actor_role:  actorRole,
+          from_status: 'under_review',
+          to_status:   'pending_execution',
+          note:        'تمت الموافقة — بانتظار التنفيذ من القسم المستقبل',
+        });
+
+        // Notify destination dept manager
+        const { data: destDept } = await service
+          .from('departments')
+          .select('head_employee_id')
+          .eq('id', request.destination_dept_id)
+          .single();
+
+        if (destDept?.head_employee_id) {
+          await createNotification(service, {
+            recipientId: destDept.head_employee_id,
+            requestId,
+            type:    'action_required',
+            titleAr: 'طلب معتمد بانتظار التنفيذ',
+            titleEn: 'Approved Request Pending Execution',
+            bodyAr:  `طلب معتمد يحتاج إلى تنفيذ من قسمك: ${request.subject}`,
+            bodyEn:  `An approved request requires execution by your department: ${request.subject}`,
+          });
+        }
+      }
+
+      // Always notify requester
+      if (request.requester_id) {
+        await createNotification(service, {
+          recipientId: request.requester_id,
+          requestId,
+          type:    'status_update',
+          titleAr: 'تمت الموافقة على طلبك',
+          titleEn: 'Your Request Was Approved',
+          bodyAr:  `تمت الموافقة على طلبك وهو الآن قيد التنفيذ: ${request.subject}`,
+          bodyEn:  `Your request has been approved and is now in execution: ${request.subject}`,
+        });
+      }
+    } else {
+      // No destination department (structural requests like create_company) — just approve
+      await service.from('requests').update({ status: 'approved' }).eq('id', requestId);
+      await service.from('request_actions').insert({
+        request_id:  requestId,
+        action:      'approved',
+        actor_id:    employee.id,
+        actor_role:  actorRole,
+        from_status: 'under_review',
+        to_status:   'approved',
+        note:        'تمت الموافقة على جميع الخطوات',
       });
+
+      const { data: req } = await service.from('requests').select('requester_id, subject').eq('id', requestId).single();
+      if (req) {
+        await createNotification(service, {
+          recipientId: req.requester_id,
+          requestId,
+          type:    'status_update',
+          titleAr: 'تمت الموافقة على طلبك',
+          titleEn: 'Your Request Was Approved',
+          bodyAr:  `تمت الموافقة على طلبك: ${req.subject}`,
+          bodyEn:  `Your request has been approved: ${req.subject}`,
+        });
+      }
     }
   } else {
     // Notify next approver
@@ -555,7 +688,7 @@ export async function cancelRequest(requestId: string) {
 
   if (!req) throw new Error('Request not found');
   if (req.requester_id !== employee.id) throw new Error('Not authorised');
-  if (['approved', 'rejected', 'completed', 'cancelled', 'archived'].includes(req.status)) {
+  if (['rejected', 'completed', 'cancelled', 'archived'].includes(req.status)) {
     throw new Error('Cannot cancel a request in this status');
   }
 
@@ -674,15 +807,21 @@ export async function completeRequest(requestId: string, note: string) {
   const isRequesterOrAdmin = isAdmin || req.requester_id === employee.id;
   if (!isRequesterOrAdmin) throw new Error('Not authorised');
 
-  if (req.status !== 'approved') throw new Error('Request must be approved before completing');
+  if (!['approved', 'pending_execution', 'in_progress', 'assigned_to_employee'].includes(req.status)) {
+    throw new Error('Request must be in an execution phase before completing');
+  }
 
-  await service.from('requests').update({ status: 'completed', completed_at: new Date().toISOString() }).eq('id', requestId);
+  await service.from('requests').update({
+    status: 'completed',
+    completed_at: new Date().toISOString(),
+    execution_completed_at: new Date().toISOString(),
+  }).eq('id', requestId);
   await service.from('request_actions').insert({
     request_id:  requestId,
     action:      'completed',
     actor_id:    employee.id,
     actor_role:  roles?.[0]?.role || 'employee',
-    from_status: 'approved',
+    from_status: req.status,
     to_status:   'completed',
     note,
   });

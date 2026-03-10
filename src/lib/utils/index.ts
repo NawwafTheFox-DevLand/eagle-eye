@@ -36,6 +36,9 @@ export function getStatusColor(status: string): string {
     completed: 'bg-green-50 text-green-700 border-green-200',
     cancelled: 'bg-gray-50 text-gray-700 border-gray-200',
     archived: 'bg-gray-50 text-gray-500 border-gray-200',
+    pending_execution: 'bg-violet-100 text-violet-700 border-violet-200',
+    in_progress: 'bg-cyan-100 text-cyan-700 border-cyan-200',
+    assigned_to_employee: 'bg-indigo-100 text-indigo-700 border-indigo-200',
   };
   return colors[status] || colors.draft;
 }

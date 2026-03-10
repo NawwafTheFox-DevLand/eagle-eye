@@ -18,6 +18,9 @@ const statusLabels: Record<string, { ar: string; en: string }> = {
   completed:             { ar: 'مكتمل',               en: 'Completed' },
   cancelled:             { ar: 'ملغي',                en: 'Cancelled' },
   archived:              { ar: 'مؤرشف',               en: 'Archived' },
+  pending_execution:     { ar: 'بانتظار التنفيذ',      en: 'Pending Execution' },
+  in_progress:           { ar: 'قيد التنفيذ',          en: 'In Progress' },
+  assigned_to_employee:  { ar: 'مُسند لموظف',          en: 'Assigned' },
 };
 
 const actionLabels: Record<string, { ar: string; en: string }> = {
@@ -29,6 +32,8 @@ const actionLabels: Record<string, { ar: string; en: string }> = {
   resubmitted:           { ar: 'أعاد التقديم',      en: 'resubmitted' },
   completed:             { ar: 'أكمل التنفيذ',      en: 'marked as completed' },
   delegated_to_employee: { ar: 'عُيِّن لموظف',      en: 'assigned to employee' },
+  auto_assigned:         { ar: 'عُيِّن تلقائياً',    en: 'auto-assigned' },
+  pending_execution:     { ar: 'بانتظار التنفيذ',    en: 'moved to execution' },
 };
 
 const leaveTypeLabels: Record<string, { ar: string; en: string }> = {
@@ -38,7 +43,7 @@ const leaveTypeLabels: Record<string, { ar: string; en: string }> = {
   unpaid:    { ar: 'بدون راتب',   en: 'Unpaid' },
 };
 
-const CANCELLABLE = new Set(['draft', 'submitted', 'under_review', 'pending_clarification']);
+const CANCELLABLE = new Set(['draft', 'submitted', 'under_review', 'pending_clarification', 'pending_execution', 'in_progress', 'assigned_to_employee']);
 
 function FileIcon({ mime }: { mime: string }) {
   if (mime.startsWith('image/')) return <>🖼️</>;
@@ -134,7 +139,7 @@ export default function RequestDetailClient({
   const visibleActions = filterActionsForViewer(actions, approvalSteps, currentEmployeeId, currentEmployeeRoles, request);
   const canCancel    = isRequester && CANCELLABLE.has(request.status);
   const canResubmit  = isRequester && request.status === 'pending_clarification';
-  const canComplete  = (isAdmin || isRequester) && request.status === 'approved';
+  const canComplete  = (isAdmin || isRequester) && ['approved', 'pending_execution', 'in_progress', 'assigned_to_employee'].includes(request.status);
 
   const t = {
     ar: {
@@ -409,7 +414,7 @@ export default function RequestDetailClient({
           {canComplete && !lifecycleDone && (
             <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6">
               <h3 className="font-semibold text-emerald-900 mb-2">
-                {lang === 'ar' ? 'الطلب موافق عليه — تأكيد التنفيذ الفعلي' : 'Request Approved — Confirm real-world completion'}
+                {lang === 'ar' ? 'تأكيد إتمام التنفيذ' : 'Confirm Completion'}
               </h3>
               {showCompleteForm ? (
                 <>

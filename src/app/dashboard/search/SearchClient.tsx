@@ -18,6 +18,9 @@ const statusLabels: Record<string, { ar: string; en: string }> = {
   completed:             { ar: 'مكتمل',               en: 'Completed' },
   cancelled:             { ar: 'ملغي',                en: 'Cancelled' },
   archived:              { ar: 'مؤرشف',               en: 'Archived' },
+  pending_execution:     { ar: 'بانتظار التنفيذ',      en: 'Pending Execution' },
+  in_progress:           { ar: 'قيد التنفيذ',          en: 'In Progress' },
+  assigned_to_employee:  { ar: 'مُسند لموظف',          en: 'Assigned' },
 };
 
 const typeLabels: Record<string, { ar: string; en: string }> = {

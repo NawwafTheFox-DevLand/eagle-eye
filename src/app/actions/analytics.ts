@@ -25,7 +25,7 @@ export async function getDashboardAnalytics() {
     service.from('employees').select('*', { count: 'exact', head: true }).eq('is_active', true),
     service.from('departments').select('id, code, name_ar, name_en, company_id, head_employee_id').eq('is_active', true),
     service.from('request_actions').select('id, action').eq('action', 'sent_back'),
-    service.from('requests').select('id, amount').eq('request_type', 'fund_disbursement').in('status', ['submitted', 'under_review', 'pending_clarification']),
+    service.from('requests').select('id, amount').eq('request_type', 'fund_disbursement').in('status', ['submitted', 'under_review', 'pending_clarification', 'pending_execution', 'in_progress']),
     service.from('evidence').select('request_id'),
   ]);
 
@@ -71,7 +71,7 @@ export async function getDashboardAnalytics() {
       name_ar: dept.name_ar,
       name_en: dept.name_en,
       total: deptReqs.length,
-      pending: deptReqs.filter(r => ['submitted', 'under_review', 'pending_clarification'].includes(r.status)).length,
+      pending: deptReqs.filter(r => ['submitted', 'under_review', 'pending_clarification', 'pending_execution', 'in_progress', 'assigned_to_employee'].includes(r.status)).length,
       completed: deptReqs.filter(r => ['completed', 'approved'].includes(r.status)).length,
     };
   }).filter(d => d.total > 0).sort((a, b) => b.total - a.total);
@@ -100,7 +100,7 @@ export async function getDashboardAnalytics() {
     thisMonthRequests: requests.filter(r => new Date(r.created_at) >= thisMonth).length,
     totalEmployees: totalEmployees || 0,
     totalDepartments: (departments || []).length,
-    pendingCount: requests.filter(r => ['submitted', 'under_review', 'pending_clarification'].includes(r.status)).length,
+    pendingCount: requests.filter(r => ['submitted', 'under_review', 'pending_clarification', 'pending_execution', 'in_progress', 'assigned_to_employee'].includes(r.status)).length,
     completedCount: requests.filter(r => ['completed', 'approved'].includes(r.status)).length,
     rejectedCount: statusCounts['rejected'] || 0,
     breachedCount: requests.filter(r => r.sla_breached).length,
@@ -191,7 +191,7 @@ export async function getScopedAnalytics(filters: {
           name_ar: dept.name_ar,
           name_en: dept.name_en,
           total: deptReqs.length,
-          pending: deptReqs.filter(r => ['submitted', 'under_review', 'pending_clarification'].includes(r.status)).length,
+          pending: deptReqs.filter(r => ['submitted', 'under_review', 'pending_clarification', 'pending_execution', 'in_progress', 'assigned_to_employee'].includes(r.status)).length,
           completed: deptReqs.filter(r => ['completed', 'approved'].includes(r.status)).length,
         };
       }).filter(d => d.total > 0).sort((a, b) => b.total - a.total);
@@ -220,7 +220,7 @@ export async function getScopedAnalytics(filters: {
           requestCount: empReqs.length,
           avgCycleHours: Math.round(avgMs / (1000 * 60 * 60)),
           approvalRate: decided > 0 ? Math.round((approved / decided) * 100) : null,
-          pending: empReqs.filter(r => ['submitted', 'under_review', 'pending_clarification'].includes(r.status)).length,
+          pending: empReqs.filter(r => ['submitted', 'under_review', 'pending_clarification', 'pending_execution', 'in_progress', 'assigned_to_employee'].includes(r.status)).length,
         };
       }).sort((a, b) => b.requestCount - a.requestCount);
     }
@@ -239,7 +239,7 @@ export async function getScopedAnalytics(filters: {
   const rejectionRate = totalDecided > 0 ? Math.round((rejectedCount / totalDecided) * 100) : 0;
 
   const financialExposure = requests
-    .filter(r => r.request_type === 'fund_disbursement' && ['submitted', 'under_review', 'pending_clarification'].includes(r.status))
+    .filter(r => r.request_type === 'fund_disbursement' && ['submitted', 'under_review', 'pending_clarification', 'pending_execution', 'in_progress', 'assigned_to_employee'].includes(r.status))
     .reduce((s, r) => s + (parseFloat((r as any).amount) || 0), 0);
 
   const pendingCount = (statusCounts['submitted'] || 0) + (statusCounts['under_review'] || 0) + (statusCounts['pending_clarification'] || 0);
