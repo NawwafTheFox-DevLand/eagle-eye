@@ -1,82 +1,66 @@
-import { createClient } from '@/lib/supabase/server';
+import { createServiceClient } from '@/lib/supabase/server';
 import { getSessionEmployee } from '@/app/actions/requests';
-import { redirect } from 'next/navigation';
-import Link from 'next/link';
-import { getStatusColor, getPriorityColor, formatDate } from '@/lib/utils';
+import RequestsClient, { type RequestRow } from './RequestsClient';
 
-const statusLabels: Record<string, string> = {
-  draft: 'مسودة', submitted: 'مقدم', under_review: 'قيد المراجعة',
-  pending_clarification: 'بانتظار توضيح', returned: 'مُعاد', resubmitted: 'مُعاد تقديمه',
-  approved: 'موافق عليه', rejected: 'مرفوض', completed: 'مكتمل',
-  cancelled: 'ملغي', archived: 'مؤرشف',
-};
-
-const typeLabels: Record<string, string> = {
-  general_internal: 'طلب داخلي عام', intercompany: 'طلب بين الشركات',
-  cross_department: 'طلب بين الأقسام', fund_disbursement: 'صرف مالي',
-  leave_approval: 'إجازة', promotion: 'ترقية',
-  demotion_disciplinary: 'تأديبي', create_department: 'إنشاء قسم',
-  create_company: 'إنشاء شركة', create_position: 'إنشاء وظيفة',
-};
+const ADMIN_ROLES = ['super_admin', 'ceo'];
 
 export default async function RequestsPage() {
-  const employee = await getSessionEmployee();
-  if (!employee) redirect('/login');
+  const [service, employee] = await Promise.all([
+    createServiceClient(),
+    getSessionEmployee(),
+  ]);
 
-  const supabase = await createClient();
-  const { data: requests } = await supabase
+  const isAdmin = employee?.roles?.some((r: any) => ADMIN_ROLES.includes(r.role));
+
+  // Fetch requests (plain columns, no joins)
+  let requestsQuery = service
     .from('requests')
-    .select('*, requester:employees!requester_id(full_name_ar, full_name_en), origin_company:companies!origin_company_id(name_ar, code)')
+    .select('id, request_number, subject, request_type, status, priority, created_at, requester_id, origin_company_id')
     .order('created_at', { ascending: false })
     .limit(50);
 
-  return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">الطلبات</h1>
-          <p className="text-sm text-slate-500 mt-1">{requests?.length || 0} طلب</p>
-        </div>
-        <Link href="/dashboard/new-request" className="btn-primary text-sm flex items-center gap-2">
-          <span>➕</span> طلب جديد
-        </Link>
-      </div>
+  if (!isAdmin && employee) {
+    requestsQuery = requestsQuery.eq('requester_id', employee.id);
+  }
 
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        {!requests || requests.length === 0 ? (
-          <div className="p-12 text-center text-slate-400">
-            <span className="text-4xl mb-4 block">📋</span>
-            <p className="font-medium">لا توجد طلبات بعد</p>
-            <p className="text-sm mt-1">ابدأ بإنشاء طلب جديد</p>
-          </div>
-        ) : (
-          <div className="divide-y divide-slate-50">
-            {requests.map((req: any) => (
-              <Link key={req.id} href={`/dashboard/requests/${req.id}`}
-                className="flex items-center gap-4 px-6 py-4 hover:bg-slate-50 transition-colors">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-mono text-slate-400" dir="ltr">{req.request_number}</span>
-                    <span className={`status-badge ${getStatusColor(req.status)}`}>
-                      {statusLabels[req.status] || req.status}
-                    </span>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${getPriorityColor(req.priority)}`}>
-                      {req.priority === 'urgent' ? 'عاجل' : req.priority === 'high' ? 'عالي' : req.priority === 'normal' ? 'عادي' : 'منخفض'}
-                    </span>
-                  </div>
-                  <p className="font-medium text-slate-900 truncate">{req.subject}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {typeLabels[req.request_type] || req.request_type} • {req.requester?.full_name_ar} • {req.origin_company?.name_ar}
-                  </p>
-                </div>
-                <div className="text-xs text-slate-400 shrink-0">
-                  {formatDate(req.created_at)}
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
+  const { data: rawRequests } = await requestsQuery;
+
+  let rows: RequestRow[] = [];
+
+  if (rawRequests && rawRequests.length > 0) {
+    const requesterIds = [...new Set(rawRequests.map(r => r.requester_id).filter(Boolean))];
+    const companyIds   = [...new Set(rawRequests.map(r => r.origin_company_id).filter(Boolean))];
+
+    const [{ data: employees }, { data: companies }] = await Promise.all([
+      requesterIds.length > 0
+        ? service.from('employees').select('id, full_name_ar, full_name_en').in('id', requesterIds)
+        : Promise.resolve({ data: [] as any[] }),
+      companyIds.length > 0
+        ? service.from('companies').select('id, name_ar, name_en').in('id', companyIds)
+        : Promise.resolve({ data: [] as any[] }),
+    ]);
+
+    const empMap = new Map((employees || []).map(e => [e.id, e]));
+    const coMap  = new Map((companies  || []).map(c => [c.id, c]));
+
+    rows = rawRequests.map(r => {
+      const requester = empMap.get(r.requester_id);
+      const company   = coMap.get(r.origin_company_id);
+      return {
+        id:               r.id,
+        request_number:   r.request_number,
+        subject:          r.subject,
+        request_type:     r.request_type,
+        status:           r.status,
+        priority:         r.priority,
+        created_at:       r.created_at,
+        requester_name_ar: requester?.full_name_ar ?? null,
+        requester_name_en: requester?.full_name_en ?? null,
+        company_name_ar:  company?.name_ar ?? null,
+        company_name_en:  company?.name_en ?? null,
+      };
+    });
+  }
+
+  return <RequestsClient requests={rows} />;
 }

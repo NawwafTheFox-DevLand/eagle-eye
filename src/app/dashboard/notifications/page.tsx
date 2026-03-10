@@ -1,25 +1,24 @@
 import { createClient } from '@/lib/supabase/server';
-import { getSessionEmployee } from '@/app/actions/requests';
-import { redirect } from 'next/navigation';
 import { formatDateTime } from '@/lib/utils';
 
 export default async function NotificationsPage() {
-  const employee = await getSessionEmployee();
-  if (!employee) redirect('/login');
-
   const supabase = await createClient();
-  const { data: notifications } = await supabase
-    .from('notifications')
-    .select('*')
-    .eq('recipient_id', employee.id)
-    .order('created_at', { ascending: false })
-    .limit(50);
+  const { data: { user } } = await supabase.auth.getUser();
+
+  let notifications: any[] = [];
+  if (user) {
+    const { data: emp } = await supabase.from('employees').select('id').eq('auth_user_id', user.id).single();
+    if (emp) {
+      const { data } = await supabase.from('notifications').select('*').eq('recipient_id', emp.id).order('created_at', { ascending: false }).limit(50);
+      notifications = data || [];
+    }
+  }
 
   return (
     <div className="space-y-6 animate-fade-in">
       <h1 className="text-2xl font-bold text-slate-900">الإشعارات</h1>
       <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        {!notifications || notifications.length === 0 ? (
+        {notifications.length === 0 ? (
           <div className="p-12 text-center text-slate-400">
             <span className="text-4xl mb-4 block">🔔</span>
             <p className="font-medium">لا توجد إشعارات</p>

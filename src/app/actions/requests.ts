@@ -1,24 +1,47 @@
 'use server';
 
 import { createClient, createServiceClient } from '@/lib/supabase/server';
-import { redirect } from 'next/navigation';
 
 export async function getSessionEmployee() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
-  const { data } = await supabase
+
+  const service = await createServiceClient();
+  const { data: employee } = await service
     .from('employees')
-    .select('*, company:companies(*), department:departments(*), roles:user_roles(*)')
+    .select('id, auth_user_id, company_id, department_id, full_name_ar, full_name_en')
     .eq('auth_user_id', user.id)
     .single();
-  return data;
+  if (!employee) return null;
+
+  const [{ data: roles }, { data: company }] = await Promise.all([
+    service.from('user_roles').select('role').eq('employee_id', employee.id),
+    service.from('companies').select('name_ar, name_en').eq('id', employee.company_id).single(),
+  ]);
+
+  return { ...employee, roles: roles || [], company: company || null };
 }
 
 export async function createRequest(formData: FormData) {
   const supabase = await createClient();
-  const employee = await getSessionEmployee();
-  if (!employee) throw new Error('Not authenticated');
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const service = await createServiceClient();
+
+  const { data: employee } = await service
+    .from('employees')
+    .select('id, auth_user_id, company_id, department_id')
+    .eq('auth_user_id', user.id)
+    .single();
+
+  if (!employee) throw new Error('Employee not found');
+
+  const [{ data: company }, { data: department }] = await Promise.all([
+    service.from('companies').select('code').eq('id', employee.company_id).single(),
+    service.from('departments').select('code').eq('id', employee.department_id).single(),
+  ]);
 
   const requestType = formData.get('request_type') as string;
   const subject = formData.get('subject') as string;
@@ -27,25 +50,17 @@ export async function createRequest(formData: FormData) {
   const confidentiality = formData.get('confidentiality') as string || 'normal';
   const destinationCompanyId = formData.get('destination_company_id') as string || null;
   const destinationDeptId = formData.get('destination_dept_id') as string || null;
-
-  // Financial fields
   const amount = formData.get('amount') ? parseFloat(formData.get('amount') as string) : null;
   const currency = formData.get('currency') as string || 'SAR';
   const payee = formData.get('payee') as string || null;
   const costCenter = formData.get('cost_center') as string || null;
-
-  // Leave fields
   const leaveType = formData.get('leave_type') as string || null;
   const leaveStart = formData.get('leave_start_date') as string || null;
   const leaveEnd = formData.get('leave_end_date') as string || null;
-
-  // HR fields
   const effectiveDate = formData.get('effective_date') as string || null;
 
-  // Generate request number via service client (bypasses RLS for function call)
-  const service = await createServiceClient();
-  const companyCode = employee.company?.code || 'MH';
-  const deptCode = employee.department?.code || 'GEN';
+  const companyCode = company?.code || 'MH';
+  const deptCode = department?.code || 'GEN';
 
   const { data: numData } = await service.rpc('next_request_number', {
     p_company_code: companyCode,
@@ -55,7 +70,7 @@ export async function createRequest(formData: FormData) {
 
   const requestNumber = numData || `${companyCode}-${deptCode}-${Date.now()}`;
 
-  const { data: request, error } = await supabase
+  const { data: request, error } = await service
     .from('requests')
     .insert({
       request_number: requestNumber,
@@ -88,138 +103,155 @@ export async function createRequest(formData: FormData) {
 
 export async function submitRequest(requestId: string) {
   const supabase = await createClient();
-  const employee = await getSessionEmployee();
-  if (!employee) throw new Error('Not authenticated');
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
 
-  // Update status to submitted
-  const { error: updateErr } = await supabase
+  const service = await createServiceClient();
+
+  const { data: employee } = await service
+    .from('employees')
+    .select('id, auth_user_id')
+    .eq('auth_user_id', user.id)
+    .single();
+
+  if (!employee) throw new Error('Employee not found');
+
+  const { data: roles } = await service
+    .from('user_roles')
+    .select('role')
+    .eq('employee_id', employee.id);
+
+  const employeeWithRoles = { ...employee, roles: roles || [] };
+
+  await service
     .from('requests')
-    .update({ status: 'submitted' })
-    .eq('id', requestId)
-    .eq('requester_id', employee.id);
+    .update({ status: 'submitted', submitted_at: new Date().toISOString() })
+    .eq('id', requestId);
 
-  if (updateErr) throw new Error(updateErr.message);
-
-  // Log the action
-  await supabase.from('request_actions').insert({
+  await service.from('request_actions').insert({
     request_id: requestId,
     action: 'submitted',
-    actor_id: employee.id,
-    actor_role: employee.roles?.[0]?.role || 'employee',
+    actor_id: employeeWithRoles.id,
+    actor_role: employeeWithRoles.roles[0]?.role || 'employee',
     from_status: 'draft',
     to_status: 'submitted',
     note: 'تم تقديم الطلب',
   });
 
-  // Auto-create approval steps based on request type
-  const { data: request } = await supabase
+  // Auto-create approval steps
+  const { data: request } = await service
     .from('requests')
-    .select('*, origin_company:companies(*), origin_dept:departments(*)')
+    .select('id, request_type, origin_company_id, origin_dept_id, destination_company_id, destination_dept_id, status')
     .eq('id', requestId)
     .single();
 
   if (request) {
-    await generateApprovalSteps(supabase, request, employee);
+    await generateApprovalSteps(service, request, employeeWithRoles);
   }
 }
 
-async function generateApprovalSteps(supabase: any, request: any, requester: any) {
+async function generateApprovalSteps(service: any, request: any, requester: any) {
   const steps: any[] = [];
   let order = 1;
+  const added = new Set<string>();
+  added.add(requester.id);
 
-  // Step 1: Department manager (if requester is not a manager/CEO)
+  function addStep(id: string | null | undefined, role: string) {
+    if (!id || added.has(id)) return;
+    added.add(id);
+    steps.push({ request_id: request.id, step_order: order++, approver_id: id, approver_role: role, is_mandatory: true });
+  }
+
   const isManager = requester.roles?.some((r: any) => ['department_manager', 'ceo', 'super_admin'].includes(r.role));
+
+  // Step 1: Origin dept manager
   if (!isManager && request.origin_dept_id) {
-    const { data: dept } = await supabase
-      .from('departments')
-      .select('head_employee_id')
-      .eq('id', request.origin_dept_id)
-      .single();
-    if (dept?.head_employee_id && dept.head_employee_id !== requester.id) {
-      steps.push({ request_id: request.id, step_order: order++, approver_id: dept.head_employee_id, approver_role: 'department_manager', is_mandatory: true });
-    }
+    const { data: d } = await service.from('departments').select('head_employee_id').eq('id', request.origin_dept_id).single();
+    addStep(d?.head_employee_id, 'department_manager');
   }
 
-  // Step 2: Company CEO (for non-routine or intercompany)
-  if (['intercompany', 'fund_disbursement', 'promotion', 'demotion_disciplinary', 'create_department', 'create_company', 'create_position'].includes(request.request_type)) {
-    const { data: company } = await supabase
-      .from('companies')
-      .select('ceo_employee_id')
-      .eq('id', request.origin_company_id)
-      .single();
-    if (company?.ceo_employee_id && company.ceo_employee_id !== requester.id) {
-      steps.push({ request_id: request.id, step_order: order++, approver_id: company.ceo_employee_id, approver_role: 'ceo', is_mandatory: true });
-    }
+  // Step 2: Destination dept manager
+  if (request.destination_dept_id && request.destination_dept_id !== request.origin_dept_id) {
+    const { data: d } = await service.from('departments').select('head_employee_id').eq('id', request.destination_dept_id).single();
+    addStep(d?.head_employee_id, 'department_manager');
   }
 
-  // Step 3: Finance approval for fund disbursement
+  // Step 3: Company CEO
+  if (['intercompany','fund_disbursement','promotion','demotion_disciplinary','create_department','create_company','create_position'].includes(request.request_type)) {
+    const { data: c } = await service.from('companies').select('ceo_employee_id').eq('id', request.origin_company_id).single();
+    addStep(c?.ceo_employee_id, 'ceo');
+  }
+
+  // Step 4: Holding Finance (fund_disbursement)
   if (request.request_type === 'fund_disbursement') {
-    const { data: finDept } = await supabase
-      .from('departments')
-      .select('head_employee_id')
-      .eq('code', 'FIN10')
-      .eq('company_id', 'a0000000-0000-0000-0000-000000000001')
-      .single();
-    if (finDept?.head_employee_id) {
-      steps.push({ request_id: request.id, step_order: order++, approver_id: finDept.head_employee_id, approver_role: 'finance_approver', is_mandatory: true });
-    }
+    const q = service.from('departments').select('head_employee_id').eq('code', 'FIN10');
+    if (process.env.HOLDING_COMPANY_ID) q.eq('company_id', process.env.HOLDING_COMPANY_ID);
+    const { data: d } = await q.limit(1).single();
+    addStep(d?.head_employee_id, 'finance_approver');
   }
 
-  // Step 4: HR approval for leave/promotion/demotion
-  if (['leave_approval', 'promotion', 'demotion_disciplinary'].includes(request.request_type)) {
-    const { data: hrDept } = await supabase
-      .from('departments')
-      .select('head_employee_id')
-      .eq('code', 'HR10')
-      .eq('company_id', 'a0000000-0000-0000-0000-000000000001')
-      .single();
-    if (hrDept?.head_employee_id) {
-      steps.push({ request_id: request.id, step_order: order++, approver_id: hrDept.head_employee_id, approver_role: 'hr_approver', is_mandatory: true });
-    }
+  // Step 5: Holding HR (leave/promotion/demotion)
+  if (['leave_approval','promotion','demotion_disciplinary'].includes(request.request_type)) {
+    const q = service.from('departments').select('head_employee_id').eq('code', 'HR10');
+    if (process.env.HOLDING_COMPANY_ID) q.eq('company_id', process.env.HOLDING_COMPANY_ID);
+    const { data: d } = await q.limit(1).single();
+    addStep(d?.head_employee_id, 'hr_approver');
+  }
+
+  // Step 6: Holding CEO (financial + structural)
+  if (['fund_disbursement','create_company','create_department','create_position'].includes(request.request_type)) {
+    const { data: h } = await service.from('companies').select('ceo_employee_id').eq('is_holding', true).single();
+    addStep(h?.ceo_employee_id, 'ceo');
   }
 
   if (steps.length > 0) {
-    await supabase.from('approval_steps').insert(steps);
-    // Move to under_review
-    await supabase.from('requests').update({ status: 'under_review' }).eq('id', request.id);
+    await service.from('approval_steps').insert(steps);
+    await service.from('requests').update({ status: 'under_review' }).eq('id', request.id);
+  } else {
+    await service.from('requests').update({ status: 'approved' }).eq('id', request.id);
   }
 }
 
+
 export async function approveRequest(requestId: string, note: string, stepId: string) {
   const supabase = await createClient();
-  const employee = await getSessionEmployee();
-  if (!employee) throw new Error('Not authenticated');
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
 
-  // Complete this approval step
-  await supabase
-    .from('approval_steps')
+  const service = await createServiceClient();
+  const { data: employee } = await service
+    .from('employees')
+    .select('id, auth_user_id')
+    .eq('auth_user_id', user.id)
+    .single();
+  if (!employee) throw new Error('Employee not found');
+
+  const { data: roles } = await service
+    .from('user_roles')
+    .select('role')
+    .eq('employee_id', employee.id);
+
+  const actorRole = roles?.[0]?.role || 'employee';
+
+  await service.from('approval_steps')
     .update({ status: 'approved', completed_at: new Date().toISOString(), note })
-    .eq('id', stepId)
-    .eq('approver_id', employee.id);
+    .eq('id', stepId);
 
-  // Log action
-  await supabase.from('request_actions').insert({
-    request_id: requestId,
-    action: 'approved',
-    actor_id: employee.id,
-    actor_role: employee.roles?.[0]?.role || 'employee',
-    rationale: note,
-    from_status: 'under_review',
-    to_status: 'under_review',
+  await service.from('request_actions').insert({
+    request_id: requestId, action: 'approved', actor_id: employee.id,
+    actor_role: actorRole,
+    rationale: note, from_status: 'under_review', to_status: 'under_review',
   });
 
-  // Check if all steps are done
-  const { data: pendingSteps } = await supabase
-    .from('approval_steps')
-    .select('id')
-    .eq('request_id', requestId)
-    .eq('status', 'pending');
+  const { data: pendingSteps } = await service.from('approval_steps')
+    .select('id, step_order').eq('request_id', requestId).eq('status', 'pending')
+    .order('step_order', { ascending: true });
 
   if (!pendingSteps || pendingSteps.length === 0) {
-    await supabase.from('requests').update({ status: 'approved' }).eq('id', requestId);
-    await supabase.from('request_actions').insert({
+    await service.from('requests').update({ status: 'approved' }).eq('id', requestId);
+    await service.from('request_actions').insert({
       request_id: requestId, action: 'approved', actor_id: employee.id,
-      actor_role: employee.roles?.[0]?.role || 'employee',
+      actor_role: actorRole,
       from_status: 'under_review', to_status: 'approved',
       note: 'تمت الموافقة على جميع الخطوات',
     });
@@ -228,33 +260,53 @@ export async function approveRequest(requestId: string, note: string, stepId: st
 
 export async function rejectRequest(requestId: string, note: string, stepId: string) {
   const supabase = await createClient();
-  const employee = await getSessionEmployee();
-  if (!employee) throw new Error('Not authenticated');
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
 
-  await supabase
-    .from('approval_steps')
-    .update({ status: 'rejected', completed_at: new Date().toISOString(), note })
-    .eq('id', stepId);
+  const service = await createServiceClient();
+  const { data: employee } = await service
+    .from('employees')
+    .select('id, auth_user_id')
+    .eq('auth_user_id', user.id)
+    .single();
+  if (!employee) throw new Error('Employee not found');
 
-  await supabase.from('requests').update({ status: 'rejected' }).eq('id', requestId);
+  const { data: roles } = await service
+    .from('user_roles')
+    .select('role')
+    .eq('employee_id', employee.id);
 
-  await supabase.from('request_actions').insert({
+  await service.from('approval_steps').update({ status: 'rejected', completed_at: new Date().toISOString(), note }).eq('id', stepId);
+  await service.from('requests').update({ status: 'rejected' }).eq('id', requestId);
+  await service.from('request_actions').insert({
     request_id: requestId, action: 'rejected', actor_id: employee.id,
-    actor_role: employee.roles?.[0]?.role || 'employee',
+    actor_role: roles?.[0]?.role || 'employee',
     rationale: note, from_status: 'under_review', to_status: 'rejected',
   });
 }
 
 export async function sendBackRequest(requestId: string, note: string, stepId: string) {
   const supabase = await createClient();
-  const employee = await getSessionEmployee();
-  if (!employee) throw new Error('Not authenticated');
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
 
-  await supabase.from('requests').update({ status: 'pending_clarification' }).eq('id', requestId);
+  const service = await createServiceClient();
+  const { data: employee } = await service
+    .from('employees')
+    .select('id, auth_user_id')
+    .eq('auth_user_id', user.id)
+    .single();
+  if (!employee) throw new Error('Employee not found');
 
-  await supabase.from('request_actions').insert({
+  const { data: roles } = await service
+    .from('user_roles')
+    .select('role')
+    .eq('employee_id', employee.id);
+
+  await service.from('requests').update({ status: 'pending_clarification' }).eq('id', requestId);
+  await service.from('request_actions').insert({
     request_id: requestId, action: 'sent_back', actor_id: employee.id,
-    actor_role: employee.roles?.[0]?.role || 'employee',
+    actor_role: roles?.[0]?.role || 'employee',
     rationale: note, from_status: 'under_review', to_status: 'pending_clarification',
   });
 }

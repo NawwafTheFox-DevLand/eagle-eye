@@ -2,11 +2,14 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { getInitials } from '@/lib/utils';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
-interface TopBarProps { employee: any; unreadCount: number; pendingCount: number; lang?: 'ar' | 'en'; }
+interface TopBarProps { employee: any; unreadCount: number; pendingCount: number; }
 
-export default function TopBar({ employee, unreadCount, pendingCount, lang = 'ar' }: TopBarProps) {
+export default function TopBar({ employee, unreadCount, pendingCount }: TopBarProps) {
+  const { lang, toggle } = useLanguage();
   const [searchOpen, setSearchOpen] = useState(false);
+
   return (
     <header className="h-16 bg-white border-b border-slate-100 flex items-center px-6 gap-4 shrink-0">
       {searchOpen ? (
@@ -23,6 +26,10 @@ export default function TopBar({ employee, unreadCount, pendingCount, lang = 'ar
         </button>
       )}
       <div className="flex-1" />
+      <button onClick={toggle}
+        className="text-xs text-slate-500 hover:text-eagle-600 transition-colors px-3 py-1.5 rounded-full border border-slate-200 hover:border-eagle-300 bg-white shadow-sm">
+        {lang === 'ar' ? 'English' : 'العربية'}
+      </button>
       {pendingCount > 0 && (
         <Link href="/dashboard/approvals" className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-xs font-medium hover:bg-amber-100">
           <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
@@ -38,8 +45,12 @@ export default function TopBar({ employee, unreadCount, pendingCount, lang = 'ar
           {employee ? getInitials(employee.full_name_en || employee.full_name_ar || '?') : '?'}
         </div>
         <div className="hidden sm:block text-start">
-          <p className="text-sm font-medium text-slate-900 leading-tight">{employee?.full_name_ar || employee?.full_name_en || 'User'}</p>
-          <p className="text-[10px] text-slate-500">{employee?.department?.name_ar || ''}</p>
+          <p className="text-sm font-medium text-slate-900 leading-tight">
+            {lang === 'ar' ? (employee?.full_name_ar || employee?.full_name_en) : (employee?.full_name_en || employee?.full_name_ar) || 'User'}
+          </p>
+          <p className="text-[10px] text-slate-500">
+            {lang === 'ar' ? employee?.department?.name_ar : employee?.department?.name_en || employee?.department?.name_ar || ''}
+          </p>
         </div>
       </Link>
     </header>

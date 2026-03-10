@@ -3,8 +3,9 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
 
-interface SidebarProps { employee: any; lang?: 'ar' | 'en'; }
+interface SidebarProps { employee: any; }
 
 const navSections = [
   { title: { ar: 'الرئيسية', en: 'Main' }, items: [
@@ -34,7 +35,8 @@ const navSections = [
   ]},
 ];
 
-export default function Sidebar({ employee, lang = 'ar' }: SidebarProps) {
+export default function Sidebar({ employee }: SidebarProps) {
+  const { lang } = useLanguage();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const userRoles = employee?.roles?.map((r: any) => r.role) || ['employee'];
@@ -49,7 +51,7 @@ export default function Sidebar({ employee, lang = 'ar' }: SidebarProps) {
             <path d="M 256 140 Q 342 120, 432 180 Q 462 200, 477 240 Q 412 195, 342 200 Q 312 220, 292 245 Z" fill="white"/>
           </svg>
         </div>
-        {!collapsed && <div><h1 className="font-bold text-base leading-tight">عين النسر</h1><p className="text-[10px] text-white/50 tracking-wider">EAGLE EYE</p></div>}
+        {!collapsed && <div><h1 className="font-bold text-base leading-tight">{lang === 'ar' ? 'عين النسر' : 'Eagle Eye'}</h1><p className="text-[10px] text-white/50 tracking-wider">EAGLE EYE</p></div>}
         <button onClick={() => setCollapsed(!collapsed)} className="ms-auto text-white/40 hover:text-white/80 transition-colors text-sm">
           {collapsed ? '☰' : '◁'}
         </button>
@@ -84,8 +86,12 @@ export default function Sidebar({ employee, lang = 'ar' }: SidebarProps) {
               {employee.full_name_ar?.[0] || employee.full_name_en?.[0] || '?'}
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-medium truncate">{employee.full_name_ar || employee.full_name_en}</p>
-              <p className="text-[10px] text-white/50 truncate">{employee.company?.name_ar}</p>
+              <p className="text-sm font-medium truncate">
+                {lang === 'ar' ? (employee.full_name_ar || employee.full_name_en) : (employee.full_name_en || employee.full_name_ar)}
+              </p>
+              <p className="text-[10px] text-white/50 truncate">
+                {lang === 'ar' ? employee.company?.name_ar : employee.company?.name_en || employee.company?.name_ar}
+              </p>
             </div>
           </div>
         </div>

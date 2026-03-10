@@ -1,5 +1,11 @@
 'use client';
 import { useState } from 'react';
+import { createBrowserClient } from '@supabase/ssr';
+
+const supabase = createBrowserClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 const translations = {
   ar: {
@@ -33,16 +39,17 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({ email, password }),
-      });
-      if (!res.ok) { setError(t.error_invalid); setLoading(false); return; }
-      window.location.replace('/dashboard');
-    } catch { setError(t.error_invalid); setLoading(false); }
+    
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    
+    if (authError) {
+      setError(t.error_invalid);
+      setLoading(false);
+      return;
+    }
+    
+    // Hard navigate so middleware picks up the new cookies
+    window.location.href = '/dashboard';
   }
 
   return (
@@ -72,7 +79,7 @@ export default function LoginPage() {
           </div>
           <div className="absolute bottom-8 flex items-center gap-3 text-white/30 text-xs">
             <div className="w-2 h-2 rounded-full bg-emerald-400/60" />
-            <span>نظام آمن ومشفر</span><span className="mx-2">•</span><span>Encrypted & Secure</span>
+            <span>نظام آمن ومشفر</span><span className="mx-2">•</span><span>Encrypted &amp; Secure</span>
           </div>
         </div>
       </div>
@@ -106,13 +113,11 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">{t.email}</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
-                className="input-field" placeholder="name@company.com" dir="ltr" />
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="input-field" placeholder="name@company.com" dir="ltr" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">{t.password}</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required
-                className="input-field" dir="ltr" />
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required className="input-field" dir="ltr" />
             </div>
             <button type="submit" disabled={loading} className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed text-base">
               {loading ? (
@@ -124,7 +129,7 @@ export default function LoginPage() {
             </button>
           </form>
           <div className="mt-10 text-center">
-            <p className="text-xs text-slate-400">© {new Date().getFullYear()} Mansour Holding — منصور القابضة</p>
+            <p className="text-xs text-slate-400">© 2026 Mansour Holding — منصور القابضة</p>
             <p className="text-xs text-slate-300 mt-1">Eagle Eye v1.0</p>
           </div>
         </div>
