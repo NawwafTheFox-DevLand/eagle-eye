@@ -3,6 +3,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { getInitials } from '@/lib/utils';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import NotificationBell from '@/components/layout/NotificationBell';
 
 interface TopBarProps { employee: any; unreadCount: number; pendingCount: number; }
 
@@ -36,10 +37,7 @@ export default function TopBar({ employee, unreadCount, pendingCount }: TopBarPr
           {pendingCount} {lang === 'ar' ? 'بانتظار إجراء' : 'pending'}
         </Link>
       )}
-      <Link href="/dashboard/notifications" className="relative p-2 rounded-xl text-slate-500 hover:bg-slate-50 hover:text-slate-700">
-        <span className="text-lg">🔔</span>
-        {unreadCount > 0 && <span className="absolute -top-0.5 -end-0.5 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{unreadCount > 9 ? '9+' : unreadCount}</span>}
-      </Link>
+      <NotificationBell employeeId={employee?.id ?? ''} initialUnread={unreadCount} />
       <Link href="/dashboard/profile" className="flex items-center gap-3 ps-3 pe-4 py-1.5 rounded-xl hover:bg-slate-50">
         <div className="w-8 h-8 rounded-full bg-eagle-100 flex items-center justify-center text-eagle-700 text-xs font-bold">
           {employee ? getInitials(employee.full_name_en || employee.full_name_ar || '?') : '?'}

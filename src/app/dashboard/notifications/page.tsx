@@ -4,19 +4,20 @@ import { redirect } from 'next/navigation';
 import NotificationsClient from './NotificationsClient';
 
 export default async function NotificationsPage() {
-  const employee = await getSessionEmployee();
+  const [service, employee] = await Promise.all([
+    createServiceClient(),
+    getSessionEmployee(),
+  ]);
   if (!employee) redirect('/login');
-
-  const service = await createServiceClient();
 
   const { data: notifications } = await service
     .from('notifications')
-    .select('*')
+    .select('id, type, title_ar, title_en, body_ar, body_en, is_read, created_at, action_url')
     .eq('recipient_id', employee.id)
     .order('created_at', { ascending: false })
     .limit(100);
 
-  // Mark unread as read (fire & forget)
+  // Mark all as read (fire & forget)
   service
     .from('notifications')
     .update({ is_read: true, read_at: new Date().toISOString() })
@@ -24,5 +25,10 @@ export default async function NotificationsPage() {
     .eq('is_read', false)
     .then(() => {});
 
-  return <NotificationsClient notifications={notifications || []} />;
+  return (
+    <NotificationsClient
+      notifications={notifications || []}
+      employeeId={employee.id}
+    />
+  );
 }
