@@ -168,6 +168,36 @@ export async function revokeDelegation(delegationId: string) {
   if (error) throw new Error(error.message);
 }
 
+// ── SLA CONFIG ──
+
+export async function updateSLAConfig(requestType: string, targetHours: number, maxHours: number) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const service = await createServiceClient();
+  const { data: emp } = await service
+    .from('employees')
+    .select('id')
+    .eq('auth_user_id', user.id)
+    .single();
+  if (!emp) throw new Error('Employee not found');
+
+  const { data: roles } = await service
+    .from('user_roles')
+    .select('role')
+    .eq('employee_id', emp.id)
+    .eq('is_active', true);
+  const isSuperAdmin = roles?.some(r => r.role === 'super_admin');
+  if (!isSuperAdmin) throw new Error('Only super_admin can edit SLA config');
+
+  const { error } = await service
+    .from('request_type_configs')
+    .update({ default_sla_target_hours: targetHours, default_sla_max_hours: maxHours })
+    .eq('request_type', requestType);
+  if (error) throw new Error(error.message);
+}
+
 // ── LOOKUP HELPERS ──
 
 export async function getAllCompanies() {

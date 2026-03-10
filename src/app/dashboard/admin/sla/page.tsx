@@ -7,8 +7,10 @@ export default async function SLAPage() {
   const [service, employee] = await Promise.all([createServiceClient(), getSessionEmployee()]);
   if (!employee) redirect('/login');
 
-  const isAdmin = employee.roles?.some((r: any) => ['super_admin', 'ceo'].includes(r.role));
+  const roles = employee.roles?.map((r: any) => r.role) || [];
+  const isAdmin = roles.some((r: string) => ['super_admin', 'ceo'].includes(r));
   if (!isAdmin) redirect('/dashboard');
+  const isSuperAdmin = roles.includes('super_admin');
 
   const [{ data: configs }, { data: requests }] = await Promise.all([
     service.from('request_type_configs')
@@ -21,5 +23,5 @@ export default async function SLAPage() {
       .limit(200),
   ]);
 
-  return <SLAClient configs={configs || []} requests={requests || []} />;
+  return <SLAClient configs={configs || []} requests={requests || []} isSuperAdmin={isSuperAdmin} />;
 }
