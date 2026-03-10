@@ -4,6 +4,7 @@ import { useState, useTransition } from 'react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { getStatusColor, formatDateTime, formatCurrency } from '@/lib/utils';
 import RequestActions from '@/components/requests/RequestActions';
+import ExecutionActions from '@/components/requests/ExecutionActions';
 import { cancelRequest, resubmitRequest, completeRequest } from '@/app/actions/requests';
 
 const statusLabels: Record<string, { ar: string; en: string }> = {
@@ -30,10 +31,14 @@ const actionLabels: Record<string, { ar: string; en: string }> = {
   sent_back:             { ar: 'طلب توضيح',         en: 'requested clarification' },
   cancelled:             { ar: 'ألغى',              en: 'cancelled' },
   resubmitted:           { ar: 'أعاد التقديم',      en: 'resubmitted' },
-  completed:             { ar: 'أكمل التنفيذ',      en: 'marked as completed' },
-  delegated_to_employee: { ar: 'عُيِّن لموظف',      en: 'assigned to employee' },
-  auto_assigned:         { ar: 'عُيِّن تلقائياً',    en: 'auto-assigned' },
-  pending_execution:     { ar: 'بانتظار التنفيذ',    en: 'moved to execution' },
+  delegated_to_employee: { ar: 'عُيِّن لموظف',            en: 'assigned to employee' },
+  auto_assigned:         { ar: 'تعيين تلقائي — روتيني', en: 'auto-assigned — routine' },
+  pending_execution:     { ar: 'بانتظار التنفيذ',        en: 'awaiting execution' },
+  handle_myself:         { ar: 'تولى التنفيذ بنفسه',     en: 'handling personally' },
+  assigned_to_employee:  { ar: 'تم التعيين لموظف',       en: 'assigned to employee' },
+  employee_completed:    { ar: 'أنجز الموظف المهمة',     en: 'employee completed task' },
+  completed:             { ar: 'تم الإنجاز النهائي',     en: 'final completion' },
+  returned_to_employee:  { ar: 'أُعيد للموظف',           en: 'returned to employee' },
 };
 
 const leaveTypeLabels: Record<string, { ar: string; en: string }> = {
@@ -70,6 +75,11 @@ export interface RequestDetailProps {
   currentEmployeeDeptId?: string;
   isAdmin: boolean;
   currentEmployeeRoles: string[];
+  showExecution?: boolean;
+  isDeptManagerOfDest?: boolean;
+  isAssignedEmployee?: boolean;
+  hasEmployeeCompleted?: boolean;
+  assignedEmployee?: any;
 }
 
 function filterActionsForViewer(
@@ -126,6 +136,7 @@ function filterActionsForViewer(
 
 export default function RequestDetailClient({
   request, actions, approvalSteps, evidence, pendingStep, currentEmployeeId, currentEmployeeDeptId, isAdmin, currentEmployeeRoles,
+  showExecution = false, isDeptManagerOfDest = false, isAssignedEmployee = false, hasEmployeeCompleted = false, assignedEmployee = null,
 }: RequestDetailProps) {
   const { lang } = useLanguage();
   const [isPending, startTransition] = useTransition();
@@ -139,7 +150,7 @@ export default function RequestDetailClient({
   const visibleActions = filterActionsForViewer(actions, approvalSteps, currentEmployeeId, currentEmployeeRoles, request);
   const canCancel    = isRequester && CANCELLABLE.has(request.status);
   const canResubmit  = isRequester && request.status === 'pending_clarification';
-  const canComplete  = (isAdmin || isRequester) && ['approved', 'pending_execution', 'in_progress', 'assigned_to_employee'].includes(request.status);
+  const canComplete  = (isAdmin || isRequester) && request.status === 'approved';
 
   const t = {
     ar: {
@@ -387,6 +398,20 @@ export default function RequestDetailClient({
             />
           )}
 
+          {/* Execution phase actions */}
+          {showExecution && (
+            <ExecutionActions
+              requestId={request.id}
+              requestStatus={request.status}
+              assignedTo={request.assigned_to ?? null}
+              currentEmployeeId={currentEmployeeId}
+              isDeptManager={isDeptManagerOfDest}
+              isAssignedEmployee={isAssignedEmployee}
+              hasEmployeeCompleted={hasEmployeeCompleted}
+              departmentId={currentEmployeeDeptId ?? ''}
+            />
+          )}
+
           {/* Resubmit panel */}
           {canResubmit && !lifecycleDone && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6">
@@ -519,6 +544,21 @@ export default function RequestDetailClient({
                 <div>
                   <dt className="text-slate-500">{t.submitted}</dt>
                   <dd>{formatDateTime(request.submitted_at, lang)}</dd>
+                </div>
+              )}
+              {assignedEmployee && (
+                <div>
+                  <dt className="text-slate-500">{lang === 'ar' ? 'المُسند إليه' : 'Assigned To'}</dt>
+                  <dd className="font-medium">
+                    {lang === 'ar' ? assignedEmployee.full_name_ar : (assignedEmployee.full_name_en || assignedEmployee.full_name_ar)}
+                    <span className="text-xs text-slate-400 ms-1">({assignedEmployee.employee_code})</span>
+                  </dd>
+                </div>
+              )}
+              {request.execution_started_at && (
+                <div>
+                  <dt className="text-slate-500">{lang === 'ar' ? 'بدأ التنفيذ' : 'Execution Started'}</dt>
+                  <dd>{formatDateTime(request.execution_started_at, lang)}</dd>
                 </div>
               )}
             </dl>

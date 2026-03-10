@@ -616,7 +616,7 @@ export async function rejectRequest(requestId: string, note: string, stepId: str
 }
 
 // ── Send Back ─────────────────────────────────────────────────
-export async function sendBackRequest(requestId: string, note: string, stepId: string) {
+export async function sendBackRequest(requestId: string, note: string, stepId?: string) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
@@ -836,6 +836,125 @@ export async function completeRequest(requestId: string, note: string) {
     bodyAr:  `تم تنفيذ طلبك بنجاح: ${req.subject}`,
     bodyEn:  `Your request has been completed: ${req.subject}`,
   });
+}
+
+// ── Execution Phase Actions ───────────────────────────────────
+
+export async function handleMyself(requestId: string, note: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+  const service = await createServiceClient();
+  const { data: employee } = await service.from('employees').select('id').eq('auth_user_id', user.id).single();
+  if (!employee) throw new Error('Employee not found');
+  await service.from('requests').update({
+    status: 'in_progress',
+    assigned_to: employee.id,
+    execution_started_at: new Date().toISOString(),
+  }).eq('id', requestId);
+  await service.from('request_actions').insert({
+    request_id: requestId, action: 'handle_myself', actor_id: employee.id,
+    actor_role: 'department_manager', from_status: 'pending_execution', to_status: 'in_progress', note,
+  });
+}
+
+export async function assignExecutionToEmployee(requestId: string, employeeId: string, note: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+  const service = await createServiceClient();
+  const { data: actor } = await service.from('employees').select('id').eq('auth_user_id', user.id).single();
+  if (!actor) throw new Error('Employee not found');
+  const { data: assignee } = await service.from('employees').select('full_name_ar').eq('id', employeeId).single();
+  await service.from('requests').update({
+    status: 'assigned_to_employee', assigned_to: employeeId,
+    execution_started_at: new Date().toISOString(),
+  }).eq('id', requestId);
+  await service.from('request_actions').insert({
+    request_id: requestId, action: 'assigned_to_employee', actor_id: actor.id,
+    actor_role: 'department_manager', from_status: 'pending_execution', to_status: 'assigned_to_employee',
+    note: note || ('تم التعيين إلى: ' + (assignee?.full_name_ar || '')),
+  });
+  if (assignee) {
+    await createNotification(service, {
+      recipientId: employeeId, requestId,
+      type: 'action_required', titleAr: 'تم تعيين طلب لك', titleEn: 'Request Assigned to You',
+      bodyAr: `تم تعيينك للعمل على طلب`, bodyEn: 'A request has been assigned to you for execution',
+    });
+  }
+}
+
+export async function markDoneByEmployee(requestId: string, note: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+  const service = await createServiceClient();
+  const { data: employee } = await service.from('employees').select('id').eq('auth_user_id', user.id).single();
+  if (!employee) throw new Error('Employee not found');
+  const { data: request } = await service.from('requests').select('destination_dept_id, subject').eq('id', requestId).single();
+  await service.from('requests').update({ status: 'in_progress' }).eq('id', requestId);
+  await service.from('request_actions').insert({
+    request_id: requestId, action: 'employee_completed', actor_id: employee.id,
+    actor_role: 'employee', from_status: 'assigned_to_employee', to_status: 'in_progress', note,
+  });
+  // Notify dest dept manager
+  if (request?.destination_dept_id) {
+    const { data: destDept } = await service.from('departments').select('head_employee_id').eq('id', request.destination_dept_id).single();
+    if (destDept?.head_employee_id) {
+      await createNotification(service, {
+        recipientId: destDept.head_employee_id, requestId,
+        type: 'action_required', titleAr: 'أنجز الموظف المهمة — بانتظار توقيعك', titleEn: 'Employee Completed — Final Sign-off Required',
+        bodyAr: `أنجز الموظف طلباً ويحتاج توقيعك النهائي: ${request.subject}`,
+        bodyEn: `An employee completed a task awaiting your final sign-off: ${request.subject}`,
+      });
+    }
+  }
+}
+
+export async function finalComplete(requestId: string, note: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+  const service = await createServiceClient();
+  const { data: employee } = await service.from('employees').select('id').eq('auth_user_id', user.id).single();
+  if (!employee) throw new Error('Employee not found');
+  const { data: request } = await service.from('requests').select('requester_id, subject, status').eq('id', requestId).single();
+  await service.from('requests').update({
+    status: 'completed', execution_completed_at: new Date().toISOString(), completed_at: new Date().toISOString(),
+  }).eq('id', requestId);
+  await service.from('request_actions').insert({
+    request_id: requestId, action: 'completed', actor_id: employee.id,
+    actor_role: 'department_manager', from_status: request?.status || 'in_progress', to_status: 'completed', note,
+  });
+  if (request?.requester_id) {
+    await createNotification(service, {
+      recipientId: request.requester_id, requestId,
+      type: 'status_update', titleAr: 'اكتمل تنفيذ طلبك', titleEn: 'Your Request Has Been Completed',
+      bodyAr: `تم تنفيذ طلبك بنجاح: ${request.subject}`, bodyEn: `Your request has been completed: ${request.subject}`,
+    });
+  }
+}
+
+export async function returnToEmployee(requestId: string, note: string) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+  const service = await createServiceClient();
+  const { data: employee } = await service.from('employees').select('id').eq('auth_user_id', user.id).single();
+  if (!employee) throw new Error('Employee not found');
+  const { data: request } = await service.from('requests').select('assigned_to, subject').eq('id', requestId).single();
+  await service.from('requests').update({ status: 'assigned_to_employee' }).eq('id', requestId);
+  await service.from('request_actions').insert({
+    request_id: requestId, action: 'returned_to_employee', actor_id: employee.id,
+    actor_role: 'department_manager', from_status: 'in_progress', to_status: 'assigned_to_employee', note,
+  });
+  if (request?.assigned_to) {
+    await createNotification(service, {
+      recipientId: request.assigned_to, requestId,
+      type: 'action_required', titleAr: 'أُعيد إليك طلب للمراجعة', titleEn: 'Request Returned for Revision',
+      bodyAr: `أعاد لك المدير طلباً للمراجعة: ${request.subject}`, bodyEn: `A request was returned to you for revision: ${request.subject}`,
+    });
+  }
 }
 
 // ── Get dept employees for assign ─────────────────────────────

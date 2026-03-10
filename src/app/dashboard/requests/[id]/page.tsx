@@ -16,7 +16,7 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
   // ── 1. Fetch request (plain columns, no joins) ─────────────────
   const { data: requestRaw } = await service
     .from('requests')
-    .select('id, request_number, subject, status, priority, request_type, confidentiality, description, amount, currency, payee, cost_center, budget_source, due_date, leave_type, leave_start_date, leave_end_date, effective_date, compensation_impact, form_data, submitted_at, created_at, requester_id, origin_company_id, origin_dept_id, destination_company_id, destination_dept_id')
+    .select('id, request_number, subject, status, priority, request_type, confidentiality, description, amount, currency, payee, cost_center, budget_source, due_date, leave_type, leave_start_date, leave_end_date, effective_date, compensation_impact, form_data, submitted_at, created_at, requester_id, origin_company_id, origin_dept_id, destination_company_id, destination_dept_id, assigned_to, execution_started_at')
     .eq('id', id)
     .single();
 
@@ -94,6 +94,43 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
   const isAdmin = employee.roles?.some((r: any) => ['super_admin', 'ceo', 'company_admin', 'department_manager'].includes(r.role));
   const currentEmployeeRoles = employee.roles?.map((r: any) => r.role) || [];
 
+  // ── Execution phase detection ──────────────────────────────────
+  const EXEC_STATUSES = ['pending_execution', 'in_progress', 'assigned_to_employee'];
+  let showExecution = false;
+  let isDeptManagerOfDest = false;
+  let isAssignedEmployee = false;
+  let hasEmployeeCompleted = false;
+  let assignedEmployee: any = null;
+
+  if (EXEC_STATUSES.includes(requestRaw.status)) {
+    showExecution = true;
+
+    // Is current user the dest dept manager?
+    if (requestRaw.destination_dept_id) {
+      const { data: destDept } = await service
+        .from('departments').select('head_employee_id').eq('id', requestRaw.destination_dept_id).single();
+      isDeptManagerOfDest = destDept?.head_employee_id === employee.id;
+    }
+
+    // Is current user the assigned employee?
+    isAssignedEmployee = requestRaw.assigned_to === employee.id;
+
+    // Did the employee just complete (manager needs final sign-off)?
+    if (requestRaw.status === 'in_progress' && isDeptManagerOfDest) {
+      const { data: lastAction } = await service
+        .from('request_actions').select('action').eq('request_id', id)
+        .order('created_at', { ascending: false }).limit(1).single();
+      hasEmployeeCompleted = lastAction?.action === 'employee_completed';
+    }
+
+    // Fetch assigned employee info for sidebar
+    if (requestRaw.assigned_to) {
+      const { data: ae } = await service
+        .from('employees').select('full_name_ar, full_name_en, employee_code').eq('id', requestRaw.assigned_to).single();
+      assignedEmployee = ae ?? null;
+    }
+  }
+
   return (
     <RequestDetailClient
       request={request}
@@ -105,6 +142,11 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
       currentEmployeeDeptId={employee.department_id}
       isAdmin={!!isAdmin}
       currentEmployeeRoles={currentEmployeeRoles}
+      showExecution={showExecution}
+      isDeptManagerOfDest={isDeptManagerOfDest}
+      isAssignedEmployee={isAssignedEmployee}
+      hasEmployeeCompleted={hasEmployeeCompleted}
+      assignedEmployee={assignedEmployee}
     />
   );
 }
