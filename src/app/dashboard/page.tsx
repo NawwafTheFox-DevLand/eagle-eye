@@ -27,12 +27,15 @@ export default async function DashboardPage() {
   const isDeptManager = role === 'department_manager';
 
   // Personal counts
-  const [{ count: pendingCount }, { count: myOpenCount }, { data: rawRequests }] = await Promise.all([
+  const [{ count: pendingCount }, { count: myOpenCount }, { count: myTaskCount }, { data: rawRequests }] = await Promise.all([
     service.from('approval_steps').select('*', { count: 'exact', head: true })
       .eq('approver_id', employee.id).eq('status', 'pending'),
     service.from('requests').select('*', { count: 'exact', head: true })
       .eq('requester_id', employee.id)
       .not('status', 'in', '("completed","cancelled","archived","rejected")'),
+    service.from('requests').select('*', { count: 'exact', head: true })
+      .eq('assigned_to', employee.id)
+      .in('status', ['in_progress', 'assigned_to_employee']),
     service.from('requests')
       .select('id, request_number, subject, request_type, status, created_at, requester_id')
       .order('created_at', { ascending: false })
@@ -137,6 +140,7 @@ export default async function DashboardPage() {
       analytics={analytics}
       pendingCount={pendingCount}
       myOpenCount={myOpenCount}
+      myTaskCount={myTaskCount}
       recentRequests={recentRequests}
       role={role}
       companies={companies}

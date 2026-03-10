@@ -45,6 +45,7 @@ interface Props {
   analytics: any;
   pendingCount: number | null;
   myOpenCount: number | null;
+  myTaskCount: number | null;
   recentRequests: any[] | null;
   role: string;
   companies: any[];
@@ -54,7 +55,7 @@ interface Props {
 }
 
 export default function DashboardClient({
-  employee, analytics, pendingCount, myOpenCount, recentRequests,
+  employee, analytics, pendingCount, myOpenCount, myTaskCount, recentRequests,
   role, companies, departments, scopeEmployees, upcomingApprovals,
 }: Props) {
   const { lang } = useLanguage();
@@ -235,6 +236,7 @@ export default function DashboardClient({
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KPI title={lang === 'ar' ? 'بانتظار إجرائي' : 'Pending My Action'} value={pendingCount ?? 0} icon="⏳" bg="bg-amber-50 border-amber-100" />
         <KPI title={lang === 'ar' ? 'طلباتي المفتوحة' : 'My Open Requests'} value={myOpenCount ?? 0} icon="📋" bg="bg-blue-50 border-blue-100" />
+        {!isCEO && <KPI title={lang === 'ar' ? 'مهامي النشطة' : 'My Active Tasks'} value={myTaskCount ?? 0} icon="🎯" bg="bg-cyan-50 border-cyan-100" />}
         {isElevated && <KPI title={lang === 'ar' ? 'إجمالي الطلبات' : 'Total Requests'} value={a.totalRequests ?? 0} icon="📊" bg="bg-slate-50 border-slate-200" />}
         {isElevated && <KPI title={lang === 'ar' ? 'تجاوز SLA' : 'SLA Breached'} value={a.breachedCount ?? 0} icon="🔴" bg="bg-red-50 border-red-100" />}
       </div>

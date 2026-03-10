@@ -55,6 +55,30 @@ export function getInitials(name: string): string {
   return name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
 }
 
+export function relativeTime(dateStr: string, lang: 'ar' | 'en' = 'ar'): string {
+  const now = new Date();
+  const date = new Date(dateStr);
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (lang === 'ar') {
+    if (diffMins < 1) return 'الآن';
+    if (diffMins < 60) return `منذ ${diffMins} دقيقة`;
+    if (diffHours < 24) return `منذ ${diffHours} ساعة`;
+    if (diffDays < 7) return `منذ ${diffDays} يوم`;
+    if (diffDays < 30) return `منذ ${Math.floor(diffDays / 7)} أسبوع`;
+    return `منذ ${Math.floor(diffDays / 30)} شهر`;
+  }
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+  return `${Math.floor(diffDays / 30)}mo ago`;
+}
+
 export function timeAgo(date: string | Date, locale: 'ar' | 'en' = 'ar'): string {
   const diff = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
   if (locale === 'ar') {

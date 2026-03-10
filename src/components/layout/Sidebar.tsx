@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
-interface SidebarProps { employee: any; }
+interface SidebarProps { employee: any; taskCount?: number; }
 
 const navSections = [
   { title: { ar: 'الرئيسية', en: 'Main' }, items: [
@@ -14,6 +14,7 @@ const navSections = [
     { href: '/dashboard/requests', icon: '📋', label: { ar: 'الطلبات', en: 'Requests' } },
     { href: '/dashboard/search', icon: '🔍', label: { ar: 'بحث', en: 'Search' } },
     { href: '/dashboard/approvals', icon: '✅', label: { ar: 'الموافقات', en: 'Approvals' } },
+    { href: '/dashboard/tasks', icon: '🎯', label: { ar: 'مهامي', en: 'My Tasks' } },
   ]},
   { title: { ar: 'العلاقات الحكومية', en: 'Gov Relations' }, roles: ['gr_employee', 'gr_manager', 'super_admin', 'ceo'], items: [
     { href: '/dashboard/gr', icon: '🛡️', label: { ar: 'لوحة GR', en: 'GR Dashboard' } },
@@ -42,7 +43,7 @@ const navSections = [
   ]},
 ];
 
-export default function Sidebar({ employee }: SidebarProps) {
+export default function Sidebar({ employee, taskCount }: SidebarProps) {
   const { lang } = useLanguage();
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -76,6 +77,9 @@ export default function Sidebar({ employee }: SidebarProps) {
                       title={collapsed ? item.label[lang] : undefined}>
                       <span className={cn('shrink-0 text-base', isActive ? 'opacity-100' : 'opacity-60')}>{item.icon}</span>
                       {!collapsed && <span>{item.label[lang]}</span>}
+                      {!collapsed && item.href === '/dashboard/tasks' && (taskCount ?? 0) > 0 && (
+                        <span className="ms-auto px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-100 text-cyan-700">{taskCount}</span>
+                      )}
                     </Link>
                   );
                 })}
