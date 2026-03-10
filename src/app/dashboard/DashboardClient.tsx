@@ -48,6 +48,7 @@ export default function DashboardClient({ employee, analytics, pendingCount, myO
   const companyName = lang === 'ar' ? employee?.company?.name_ar : employee?.company?.name_en || employee?.company?.name_ar;
 
   const isAdmin = employee?.roles?.some((r: any) => ['super_admin', 'ceo'].includes(r.role));
+  const isDeptManager = employee?.roles?.some((r: any) => r.role === 'department_manager');
 
   // Chart data
   const statusData = Object.entries(analytics.statusCounts || {}).map(([key, value]) => ({
@@ -89,6 +90,26 @@ export default function DashboardClient({ employee, analytics, pendingCount, myO
           <KPI title={lang === 'ar' ? 'مكتملة' : 'Completed'} value={analytics.completedCount} icon="✅" bg="bg-emerald-50 border-emerald-100" />
           <KPI title={lang === 'ar' ? 'مرفوضة' : 'Rejected'} value={analytics.rejectedCount} icon="❌" bg="bg-red-50 border-red-100" />
           <KPI title={lang === 'ar' ? 'متوسط الإنجاز' : 'Avg Cycle'} value={analytics.avgCycleHours > 0 ? `${analytics.avgCycleHours}h` : '—'} icon="⏱️" bg="bg-cyan-50 border-cyan-100" />
+        </div>
+      )}
+
+      {/* Admin new metrics row */}
+      {isAdmin && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KPI title={lang === 'ar' ? 'معدل الموافقة' : 'Approval Rate'} value={`${analytics.approvalRate ?? 0}%`} icon="✅" bg="bg-emerald-50 border-emerald-100" />
+          <KPI title={lang === 'ar' ? 'معدل الرفض' : 'Rejection Rate'} value={`${analytics.rejectionRate ?? 0}%`} icon="❌" bg="bg-red-50 border-red-100" />
+          <KPI title={lang === 'ar' ? 'طلبات الإعادة' : 'Returned'} value={analytics.returnCount ?? 0} icon="↩️" bg="bg-amber-50 border-amber-100" />
+          <KPI title={lang === 'ar' ? 'مبالغ معلقة (صرف)' : 'Pending Disbursement'} value={new Intl.NumberFormat('en-US', { notation: 'compact' }).format(analytics.financialExposure ?? 0) + ' SAR'} icon="💰" bg="bg-blue-50 border-blue-100" />
+        </div>
+      )}
+
+      {/* Dept manager KPI row */}
+      {isDeptManager && !isAdmin && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KPI title={lang === 'ar' ? 'طلبات قسمي' : "My Dept's Requests"} value={analytics.deptWorkload?.find((d: any) => true)?.total ?? 0} icon="🏢" bg="bg-violet-50 border-violet-100" />
+          <KPI title={lang === 'ar' ? 'معلقة' : 'Pending'} value={analytics.deptWorkload?.find((d: any) => true)?.pending ?? 0} icon="⏳" bg="bg-amber-50 border-amber-100" />
+          <KPI title={lang === 'ar' ? 'نسبة الموافقة' : 'Approval Rate'} value={`${analytics.approvalRate ?? 0}%`} icon="✅" bg="bg-emerald-50 border-emerald-100" />
+          <KPI title={lang === 'ar' ? 'نسبة الرفض' : 'Rejection Rate'} value={`${analytics.rejectionRate ?? 0}%`} icon="❌" bg="bg-red-50 border-red-100" />
         </div>
       )}
 

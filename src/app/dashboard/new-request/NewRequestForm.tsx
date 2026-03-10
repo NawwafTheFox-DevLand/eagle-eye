@@ -20,9 +20,19 @@ const labels = {
     destination: 'الجهة المستقبلة', destCompany: 'الشركة المستقبلة', destDept: 'القسم المستقبل',
     selectCompany: 'اختر الشركة', selectDept: 'اختر القسم',
     amount: 'المبلغ', currency: 'العملة', payee: 'المستفيد', costCenter: 'مركز التكلفة',
+    budgetSource: 'مصدر الميزانية', dueDate: 'تاريخ الاستحقاق',
     sar: 'ريال سعودي', usd: 'دولار أمريكي', eur: 'يورو',
     leaveType: 'نوع الإجازة', annual: 'سنوية', sick: 'مرضية', emergency: 'طارئة', unpaid: 'بدون راتب',
     fromDate: 'من تاريخ', toDate: 'إلى تاريخ',
+    effectiveDate: 'تاريخ النفاذ', compensationImpact: 'الأثر على التعويض',
+    justification: 'المبرر', policyRef: 'المرجع التنظيمي',
+    deptCode: 'الرمز المقترح', reportingLine: 'خط الإبلاغ', businessReason: 'السبب التجاري',
+    legalName: 'الاسم القانوني', proposedCode: 'الرمز المقترح',
+    positionCompany: 'الشركة', positionDept: 'القسم',
+    positionTitle: 'مسمى الوظيفة', positionCode: 'رمز الوظيفة', grade: 'الدرجة',
+    currentRole: 'الدور الحالي', proposedRole: 'الدور المقترح', proposedChange: 'التغيير المقترح',
+    ownerEmployee: 'المسؤول المقترح',
+    shortName: 'الاسم المختصر', parentCompany: 'الشركة الأم', proposedCeo: 'الرئيس التنفيذي المقترح',
     attachments: 'المرفقات', attachDrop: 'اضغط لاختيار الملفات أو اسحبها هنا',
     cancel: 'إلغاء', submit: 'تقديم الطلب', submitting: 'جاري التقديم...',
     success: 'تم تقديم الطلب بنجاح', viewRequests: 'عرض طلباتي', newRequest: 'طلب جديد',
@@ -36,9 +46,19 @@ const labels = {
     destination: 'Destination', destCompany: 'Destination Company', destDept: 'Destination Department',
     selectCompany: 'Select company', selectDept: 'Select department',
     amount: 'Amount', currency: 'Currency', payee: 'Payee', costCenter: 'Cost Center',
+    budgetSource: 'Budget Source', dueDate: 'Due Date',
     sar: 'SAR', usd: 'USD', eur: 'EUR',
     leaveType: 'Leave Type', annual: 'Annual', sick: 'Sick', emergency: 'Emergency', unpaid: 'Unpaid',
     fromDate: 'From', toDate: 'To',
+    effectiveDate: 'Effective Date', compensationImpact: 'Compensation Impact',
+    justification: 'Justification', policyRef: 'Policy Reference',
+    deptCode: 'Proposed Dept Code', reportingLine: 'Reporting Line', businessReason: 'Business Reason',
+    legalName: 'Legal Name', proposedCode: 'Proposed Code',
+    positionCompany: 'Company', positionDept: 'Department',
+    positionTitle: 'Position Title', positionCode: 'Position Code', grade: 'Grade',
+    currentRole: 'Current Role', proposedRole: 'Proposed Role', proposedChange: 'Proposed Change',
+    ownerEmployee: 'Proposed Owner',
+    shortName: 'Short Name', parentCompany: 'Parent Company', proposedCeo: 'Proposed CEO',
     attachments: 'Attachments', attachDrop: 'Click to select files or drag here',
     cancel: 'Cancel', submit: 'Submit Request', submitting: 'Submitting...',
     success: 'Request submitted successfully', viewRequests: 'View Requests', newRequest: 'New Request',
@@ -77,12 +97,17 @@ export default function NewRequestForm({ employee, configs, companies, departmen
     return departments.filter((d: any) => d.company_id === cid);
   }, [destCompanyId, departments, employee]);
 
-  const isIntercompany = selectedType?.request_type === 'intercompany';
-  const isSameCompany = ['general_internal', 'cross_department'].includes(selectedType?.request_type);
-  const isFinancial = selectedType?.request_type === 'fund_disbursement';
-  const isLeave = selectedType?.request_type === 'leave_approval';
-  const isHR = ['leave_approval', 'promotion', 'demotion_disciplinary'].includes(selectedType?.request_type);
-  const isStructural = ['create_department', 'create_company', 'create_position'].includes(selectedType?.request_type);
+  const isIntercompany    = selectedType?.request_type === 'intercompany';
+  const isSameCompany     = ['general_internal', 'cross_department'].includes(selectedType?.request_type);
+  const isFinancial       = selectedType?.request_type === 'fund_disbursement';
+  const isLeave           = selectedType?.request_type === 'leave_approval';
+  const isPromotion       = selectedType?.request_type === 'promotion';
+  const isDemotion        = selectedType?.request_type === 'demotion_disciplinary';
+  const isHR              = ['leave_approval', 'promotion', 'demotion_disciplinary'].includes(selectedType?.request_type);
+  const isStructural      = ['create_department', 'create_company', 'create_position'].includes(selectedType?.request_type);
+  const isCreateDept      = selectedType?.request_type === 'create_department';
+  const isCreateCompany   = selectedType?.request_type === 'create_company';
+  const isCreatePosition  = selectedType?.request_type === 'create_position';
   const autoNote = isFinancial ? L.finNote : isHR ? L.hrNote : isStructural ? L.ceoNote : null;
 
   const availableCompanies = useMemo(() => {
@@ -216,6 +241,8 @@ export default function NewRequestForm({ employee, configs, companies, departmen
             <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.currency}</label><select name="currency" className="input-field"><option value="SAR">{L.sar}</option><option value="USD">{L.usd}</option><option value="EUR">{L.eur}</option></select></div>
             <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.payee}</label><input name="payee" className="input-field" /></div>
             <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.costCenter}</label><input name="cost_center" className="input-field" /></div>
+            <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.budgetSource}</label><input name="budget_source" className="input-field" /></div>
+            <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.dueDate}</label><input name="due_date" type="date" className="input-field" dir="ltr" /></div>
           </div>
         )}
 
@@ -224,6 +251,61 @@ export default function NewRequestForm({ employee, configs, companies, departmen
             <div className="col-span-2"><label className="block text-sm font-medium text-slate-700 mb-2">{L.leaveType}</label><select name="leave_type" className="input-field"><option value="annual">{L.annual}</option><option value="sick">{L.sick}</option><option value="emergency">{L.emergency}</option><option value="unpaid">{L.unpaid}</option></select></div>
             <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.fromDate}</label><input name="leave_start_date" type="date" className="input-field" dir="ltr" /></div>
             <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.toDate}</label><input name="leave_end_date" type="date" className="input-field" dir="ltr" /></div>
+          </div>
+        )}
+
+        {/* Promotion / Demotion fields */}
+        {(isPromotion || isDemotion) && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.currentRole}</label><input name="current_role" className="input-field" /></div>
+              {isPromotion && <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.proposedRole}</label><input name="proposed_role" className="input-field" /></div>}
+              {isDemotion && <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.proposedChange}</label><input name="proposed_change" className="input-field" /></div>}
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.effectiveDate}</label><input name="effective_date" type="date" className="input-field" dir="ltr" /></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.compensationImpact}</label><input name="compensation_impact" className="input-field" /></div>
+            </div>
+            <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.justification}</label><textarea name="justification" rows={3} className="input-field" /></div>
+            {isDemotion && <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.policyRef}</label><input name="policy_reference" className="input-field" /></div>}
+          </div>
+        )}
+
+        {/* Create Department fields */}
+        {isCreateDept && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.deptCode}</label><input name="proposed_dept_code" className="input-field" dir="ltr" /></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.reportingLine}</label><input name="reporting_line" className="input-field" /></div>
+              <div className="col-span-2"><label className="block text-sm font-medium text-slate-700 mb-2">{L.ownerEmployee}</label><input name="owner_employee" className="input-field" /></div>
+            </div>
+            <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.businessReason}</label><textarea name="business_reason" rows={3} className="input-field" /></div>
+          </div>
+        )}
+
+        {/* Create Company fields */}
+        {isCreateCompany && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.legalName}</label><input name="legal_name" className="input-field" /></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.proposedCode}</label><input name="proposed_code" className="input-field" dir="ltr" /></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.shortName}</label><input name="short_name" className="input-field" /></div>
+              <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.parentCompany}</label><input name="parent_company" className="input-field" /></div>
+              <div className="col-span-2"><label className="block text-sm font-medium text-slate-700 mb-2">{L.proposedCeo}</label><input name="proposed_ceo" className="input-field" /></div>
+            </div>
+            <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.businessReason}</label><textarea name="business_reason" rows={3} className="input-field" /></div>
+          </div>
+        )}
+
+        {/* Create Position fields */}
+        {isCreatePosition && (
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.positionCompany}</label><input name="position_company" className="input-field" /></div>
+            <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.positionDept}</label><input name="position_dept" className="input-field" /></div>
+            <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.positionTitle}</label><input name="position_title" className="input-field" /></div>
+            <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.positionCode}</label><input name="position_code" className="input-field" dir="ltr" /></div>
+            <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.grade}</label><input name="grade" className="input-field" dir="ltr" /></div>
+            <div><label className="block text-sm font-medium text-slate-700 mb-2">{L.reportingLine}</label><input name="reporting_line" className="input-field" /></div>
           </div>
         )}
 

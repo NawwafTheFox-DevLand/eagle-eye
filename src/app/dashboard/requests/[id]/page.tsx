@@ -16,7 +16,7 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
   // ── 1. Fetch request (plain columns, no joins) ─────────────────
   const { data: requestRaw } = await service
     .from('requests')
-    .select('id, request_number, subject, status, priority, request_type, confidentiality, description, amount, currency, payee, cost_center, leave_type, leave_start_date, leave_end_date, submitted_at, created_at, requester_id, origin_company_id, origin_dept_id, destination_company_id, destination_dept_id')
+    .select('id, request_number, subject, status, priority, request_type, confidentiality, description, amount, currency, payee, cost_center, budget_source, due_date, leave_type, leave_start_date, leave_end_date, effective_date, compensation_impact, form_data, submitted_at, created_at, requester_id, origin_company_id, origin_dept_id, destination_company_id, destination_dept_id')
     .eq('id', id)
     .single();
 
@@ -29,7 +29,7 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
       .eq('request_id', id)
       .order('created_at', { ascending: true }),
     service.from('approval_steps')
-      .select('id, step_order, approver_role, status, completed_at, note, approver_id')
+      .select('id, step_order, approver_role, status, completed_at, note, approver_id, delegate_id')
       .eq('request_id', id)
       .order('step_order'),
     service.from('evidence')
@@ -42,7 +42,10 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
   const companyIds = [...new Set([requestRaw.origin_company_id, requestRaw.destination_company_id].filter(Boolean))];
   const deptIds    = [...new Set([requestRaw.origin_dept_id, requestRaw.destination_dept_id].filter(Boolean))];
   const actorIds   = [...new Set((actionsRaw || []).map(a => a.actor_id).filter(Boolean))];
-  const approverIds = [...new Set((stepsRaw || []).map(s => s.approver_id).filter(Boolean))];
+  const approverIds = [...new Set([
+    ...(stepsRaw || []).map((s: any) => s.approver_id),
+    ...(stepsRaw || []).map((s: any) => s.delegate_id),
+  ].filter(Boolean))];
   const allEmpIds  = [...new Set([requestRaw.requester_id, ...actorIds, ...approverIds].filter(Boolean))];
 
   // ── 4. Batch-fetch all related data in parallel ────────────────
@@ -80,12 +83,15 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
   const approvalSteps = (stepsRaw || []).map(s => ({
     ...s,
     approver: empMap.get(s.approver_id) ?? null,
+    delegateOf: s.delegate_id ? empMap.get(s.delegate_id) ?? null : null,
   }));
 
   // Find the current (lowest order) pending step
   const currentPendingOrder = Math.min(...approvalSteps.filter(s => s.status === 'pending').map(s => s.step_order).concat([999]));
   // Only show action panel if this user's pending step IS the current step
   const pendingStep = approvalSteps.find(s => s.approver_id === employee.id && s.status === 'pending' && s.step_order === currentPendingOrder) ?? null;
+
+  const isAdmin = employee.roles?.some((r: any) => ['super_admin', 'ceo', 'company_admin', 'department_manager'].includes(r.role));
 
   return (
     <RequestDetailClient
@@ -94,6 +100,8 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
       approvalSteps={approvalSteps}
       evidence={evidence}
       pendingStep={pendingStep ? { id: pendingStep.id } : null}
+      currentEmployeeId={employee.id}
+      isAdmin={!!isAdmin}
     />
   );
 }

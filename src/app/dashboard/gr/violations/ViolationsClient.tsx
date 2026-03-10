@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 const pathLabels: Record<string, { ar: string; en: string; color: string }> = {
@@ -52,8 +53,10 @@ export default function ViolationsClient({ violations, entities }: any) {
                   const entity = entityMap.get(v.actual_entity_id);
                   const path = v.resolution_path ? pathLabels[v.resolution_path] : null;
                   return (
-                    <tr key={v.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 font-mono text-xs text-slate-600">{v.violation_number}</td>
+                    <tr key={v.id} className="hover:bg-slate-50 cursor-pointer">
+                      <td className="px-4 py-3 font-mono text-xs text-slate-600">
+                        <Link href={`/dashboard/gr/violations/${v.id}`} className="hover:text-blue-700 hover:underline">{v.violation_number}</Link>
+                      </td>
                       <td className="px-4 py-3 text-slate-900 max-w-[200px] truncate">{v.description || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{v.issuing_authority || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{entity?.name_ar || v.notified_entity_per_notice || '—'}</td>

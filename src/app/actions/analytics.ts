@@ -10,6 +10,9 @@ export async function getDashboardAnalytics() {
     { data: recentActions },
     { count: totalEmployees },
     { data: departments },
+    { data: sentBackActions },
+    { data: pendingFinancial },
+    { data: evidenceFiles },
   ] = await Promise.all([
     service.from('requests')
       .select('id, request_type, status, priority, sla_breached, submitted_at, completed_at, created_at, origin_company_id, origin_dept_id, requester_id')
@@ -21,6 +24,9 @@ export async function getDashboardAnalytics() {
       .limit(200),
     service.from('employees').select('*', { count: 'exact', head: true }).eq('is_active', true),
     service.from('departments').select('id, code, name_ar, name_en, company_id, head_employee_id').eq('is_active', true),
+    service.from('request_actions').select('id, action').eq('action', 'sent_back'),
+    service.from('requests').select('id, amount').eq('request_type', 'fund_disbursement').in('status', ['submitted', 'under_review', 'pending_clarification']),
+    service.from('evidence').select('request_id'),
   ]);
 
   const requests = allRequests || [];
@@ -77,6 +83,18 @@ export async function getDashboardAnalytics() {
     : 0;
   const avgCycleHours = Math.round(avgCycleMs / (1000 * 60 * 60));
 
+  const returnCount = (sentBackActions || []).length;
+  const approvedCount = statusCounts['approved'] || 0;
+  const rejectedCount2 = statusCounts['rejected'] || 0;
+  const totalDecided = approvedCount + rejectedCount2;
+  const approvalRate = totalDecided > 0 ? Math.round((approvedCount / totalDecided) * 100) : 0;
+  const rejectionRate = totalDecided > 0 ? Math.round((rejectedCount2 / totalDecided) * 100) : 0;
+  const financialExposure = (pendingFinancial || []).reduce((s: number, r: any) => s + (parseFloat(r.amount) || 0), 0);
+  const completedIds = new Set(requests.filter(r => ['completed', 'approved'].includes(r.status)).map(r => r.id));
+  const evidenceRequestIds = new Set((evidenceFiles || []).map((e: any) => e.request_id));
+  const completedWithEvidence = [...completedIds].filter(id => evidenceRequestIds.has(id)).length;
+  const evidenceCompleteness = completedIds.size > 0 ? Math.round((completedWithEvidence / completedIds.size) * 100) : 0;
+
   return {
     totalRequests: requests.length,
     thisMonthRequests: requests.filter(r => new Date(r.created_at) >= thisMonth).length,
@@ -92,5 +110,10 @@ export async function getDashboardAnalytics() {
     priorityCounts,
     monthlyData,
     deptWorkload,
+    returnCount,
+    approvalRate,
+    rejectionRate,
+    financialExposure,
+    evidenceCompleteness,
   };
 }

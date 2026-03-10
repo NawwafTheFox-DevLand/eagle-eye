@@ -1,6 +1,7 @@
 'use client';
 import { useState, useTransition } from 'react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import Link from 'next/link';
 import { createGRTask, updateGRTaskStatus } from '@/app/actions/gr';
 import { useRouter } from 'next/navigation';
 
@@ -141,7 +142,7 @@ export default function TasksClient({ tasks, entities, employees }: any) {
                       <span className="font-mono text-xs text-slate-400" dir="ltr">{t.task_number}</span>
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[t.status] || 'bg-slate-100 text-slate-600'}`}>{t.status}</span>
                     </div>
-                    <p className="font-medium text-slate-900 truncate">{t.title}</p>
+                    <Link href={`/dashboard/gr/tasks/${t.id}`} className="font-medium text-slate-900 hover:text-blue-700 hover:underline truncate block">{t.title}</Link>
                     <p className="text-xs text-slate-500 mt-0.5">{type?.[lang] || t.task_type} • {entity?.name_ar || '—'} • {assignee?.full_name_ar || '—'}</p>
                   </div>
                   {t.due_date && <span className="text-xs text-slate-400">{t.due_date}</span>}

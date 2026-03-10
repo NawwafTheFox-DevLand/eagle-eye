@@ -12,6 +12,7 @@ const navSections = [
     { href: '/dashboard', icon: '◫', label: { ar: 'لوحة القيادة', en: 'Dashboard' } },
     { href: '/dashboard/new-request', icon: '➕', label: { ar: 'طلب جديد', en: 'New Request' } },
     { href: '/dashboard/requests', icon: '📋', label: { ar: 'الطلبات', en: 'Requests' } },
+    { href: '/dashboard/search', icon: '🔍', label: { ar: 'بحث', en: 'Search' } },
     { href: '/dashboard/approvals', icon: '✅', label: { ar: 'الموافقات', en: 'Approvals' } },
   ]},
   { title: { ar: 'العلاقات الحكومية', en: 'Gov Relations' }, roles: ['gr_employee', 'gr_manager', 'super_admin', 'ceo'], items: [
@@ -21,6 +22,9 @@ const navSections = [
     { href: '/dashboard/gr/tasks', icon: '📝', label: { ar: 'المهام', en: 'Tasks' } },
     { href: '/dashboard/gr/violations', icon: '⚠️', label: { ar: 'المخالفات', en: 'Violations' } },
     { href: '/dashboard/gr/committees', icon: '👥', label: { ar: 'اللجان', en: 'Committees' } },
+    { href: '/dashboard/gr/workshops', icon: '📚', label: { ar: 'ورش العمل', en: 'Workshops' } },
+    { href: '/dashboard/gr/alerts', icon: '🔔', label: { ar: 'التنبيهات', en: 'Alerts' } },
+    { href: '/dashboard/gr/performance', icon: '📊', label: { ar: 'الأداء', en: 'Performance' } },
   ]},
   { title: { ar: 'الإدارة', en: 'Administration' }, roles: ['super_admin', 'company_admin', 'ceo'], items: [
     { href: '/dashboard/admin/employees', icon: '👤', label: { ar: 'الموظفين', en: 'Employees' } },

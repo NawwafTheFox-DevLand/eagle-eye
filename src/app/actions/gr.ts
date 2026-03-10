@@ -12,10 +12,87 @@ async function getGRAccess() {
   if (!employee) throw new Error('Employee not found');
 
   const { data: roles } = await service.from('user_roles').select('role').eq('employee_id', employee.id).eq('is_active', true);
-  const hasAccess = roles?.some(r => ['super_admin', 'ceo', 'gr_manager', 'gr_employee'].includes(r.role));
+  const hasAccess = roles?.some(r => ['super_admin', 'ceo', 'gr_manager', 'gr_employee', 'finance_supervisor', 'banking_employee'].includes(r.role));
   if (!hasAccess) throw new Error('GR access required');
 
   return { service, employee };
+}
+
+const GR_TASK_STEP_TEMPLATES: Record<string, Array<{ step_order: number; step_name: string; step_name_ar: string; actor_role: string }>> = {
+  annual_renewal: [
+    { step_order: 1, step_name: 'Prepare Renewal Documents',    step_name_ar: 'إعداد وثائق التجديد',          actor_role: 'gr_employee' },
+    { step_order: 2, step_name: 'Submit Renewal Application',   step_name_ar: 'تقديم طلب التجديد',           actor_role: 'gr_employee' },
+    { step_order: 3, step_name: 'Pay Renewal Fees',             step_name_ar: 'سداد رسوم التجديد',           actor_role: 'banking_employee' },
+    { step_order: 4, step_name: 'Upload Payment Receipt',       step_name_ar: 'رفع إيصال الدفع',             actor_role: 'gr_employee' },
+    { step_order: 5, step_name: 'Finance Supervisor Approval',  step_name_ar: 'اعتماد مشرف المالية',         actor_role: 'finance_supervisor' },
+    { step_order: 6, step_name: 'Await Government Processing',  step_name_ar: 'انتظار معالجة الجهة الحكومية', actor_role: 'gr_employee' },
+    { step_order: 7, step_name: 'Follow Up with Authority',     step_name_ar: 'المتابعة مع الجهة',           actor_role: 'gr_employee' },
+    { step_order: 8, step_name: 'Receive Renewed License',      step_name_ar: 'استلام الترخيص المجدد',        actor_role: 'gr_employee' },
+    { step_order: 9, step_name: 'Archive Documents',            step_name_ar: 'أرشفة الوثائق',               actor_role: 'gr_employee' },
+  ],
+  issuance: [
+    { step_order: 1, step_name: 'Prepare Issuance Documents',   step_name_ar: 'إعداد وثائق الإصدار',         actor_role: 'gr_employee' },
+    { step_order: 2, step_name: 'Submit Issuance Application',  step_name_ar: 'تقديم طلب الإصدار',           actor_role: 'gr_employee' },
+    { step_order: 3, step_name: 'Pay Issuance Fees',            step_name_ar: 'سداد رسوم الإصدار',           actor_role: 'banking_employee' },
+    { step_order: 4, step_name: 'Upload Payment Receipt',       step_name_ar: 'رفع إيصال الدفع',             actor_role: 'gr_employee' },
+    { step_order: 5, step_name: 'Finance Supervisor Approval',  step_name_ar: 'اعتماد مشرف المالية',         actor_role: 'finance_supervisor' },
+    { step_order: 6, step_name: 'Receive Issued License',       step_name_ar: 'استلام الترخيص الصادر',        actor_role: 'gr_employee' },
+    { step_order: 7, step_name: 'Archive Documents',            step_name_ar: 'أرشفة الوثائق',               actor_role: 'gr_employee' },
+  ],
+  cancellation: [
+    { step_order: 1, step_name: 'Prepare Cancellation Request', step_name_ar: 'إعداد طلب الشطب',             actor_role: 'gr_employee' },
+    { step_order: 2, step_name: 'Manager Approval',             step_name_ar: 'موافقة المدير',               actor_role: 'gr_manager' },
+    { step_order: 3, step_name: 'Submit Cancellation Application', step_name_ar: 'تقديم طلب الشطب للجهة',  actor_role: 'gr_employee' },
+    { step_order: 4, step_name: 'Await Government Confirmation', step_name_ar: 'انتظار تأكيد الجهة',        actor_role: 'gr_employee' },
+    { step_order: 5, step_name: 'Archive Documents',            step_name_ar: 'أرشفة الوثائق',               actor_role: 'gr_employee' },
+  ],
+  inquiry: [
+    { step_order: 1, step_name: 'Submit Inquiry',               step_name_ar: 'تقديم الاستعلام',             actor_role: 'gr_employee' },
+    { step_order: 2, step_name: 'Follow Up',                    step_name_ar: 'المتابعة',                    actor_role: 'gr_employee' },
+    { step_order: 3, step_name: 'Receive Response',             step_name_ar: 'استلام الرد',                 actor_role: 'gr_employee' },
+  ],
+  violation: [
+    { step_order: 1, step_name: 'Review Violation Notice',      step_name_ar: 'مراجعة إشعار المخالفة',       actor_role: 'gr_manager' },
+    { step_order: 2, step_name: 'Prepare Defense Response',     step_name_ar: 'إعداد رد الاعتراض',           actor_role: 'gr_employee' },
+    { step_order: 3, step_name: 'Pay Fine (if applicable)',     step_name_ar: 'سداد الغرامة (إن وجدت)',       actor_role: 'banking_employee' },
+    { step_order: 4, step_name: 'Upload Payment Proof',         step_name_ar: 'رفع إثبات الدفع',             actor_role: 'gr_employee' },
+    { step_order: 5, step_name: 'Submit Response to Authority', step_name_ar: 'تقديم الرد للجهة الحكومية',   actor_role: 'gr_employee' },
+    { step_order: 6, step_name: 'Receive Resolution Decision',  step_name_ar: 'استلام قرار الفصل',            actor_role: 'gr_manager' },
+  ],
+  workshop: [
+    { step_order: 1, step_name: 'Register Participants',        step_name_ar: 'تسجيل المشاركين',             actor_role: 'gr_employee' },
+    { step_order: 2, step_name: 'Attend Workshop',              step_name_ar: 'حضور ورشة العمل',             actor_role: 'gr_employee' },
+    { step_order: 3, step_name: 'Collect Certificates',         step_name_ar: 'استلام الشهادات',             actor_role: 'gr_employee' },
+    { step_order: 4, step_name: 'Archive Certificates',         step_name_ar: 'أرشفة الشهادات',              actor_role: 'gr_employee' },
+  ],
+  investigation: [
+    { step_order: 1, step_name: 'Gather Documentation',         step_name_ar: 'جمع الوثائق والمستندات',      actor_role: 'gr_employee' },
+    { step_order: 2, step_name: 'Prepare Investigation File',   step_name_ar: 'إعداد ملف التحقيق',           actor_role: 'gr_manager' },
+    { step_order: 3, step_name: 'Submit to Authority',          step_name_ar: 'التقديم للجهة المختصة',       actor_role: 'gr_employee' },
+    { step_order: 4, step_name: 'Follow Up',                    step_name_ar: 'المتابعة',                    actor_role: 'gr_employee' },
+    { step_order: 5, step_name: 'Receive Decision',             step_name_ar: 'استلام القرار',               actor_role: 'gr_manager' },
+  ],
+  committee: [
+    { step_order: 1, step_name: 'Prepare Committee Agenda',     step_name_ar: 'إعداد جدول أعمال اللجنة',    actor_role: 'gr_manager' },
+    { step_order: 2, step_name: 'Notify Members',               step_name_ar: 'إخطار الأعضاء',              actor_role: 'gr_employee' },
+    { step_order: 3, step_name: 'Hold Meeting',                 step_name_ar: 'عقد الاجتماع',               actor_role: 'gr_manager' },
+    { step_order: 4, step_name: 'Prepare Meeting Minutes',      step_name_ar: 'إعداد محضر الاجتماع',         actor_role: 'gr_employee' },
+    { step_order: 5, step_name: 'Archive Minutes',              step_name_ar: 'أرشفة المحضر',               actor_role: 'gr_manager' },
+  ],
+};
+
+async function generateGRTaskSteps(service: any, taskId: string, taskType: string) {
+  const template = GR_TASK_STEP_TEMPLATES[taskType];
+  if (!template || template.length === 0) return;
+  const rows = template.map(s => ({
+    task_id: taskId,
+    step_order: s.step_order,
+    step_name: s.step_name,
+    step_name_ar: s.step_name_ar,
+    actor_role: s.actor_role,
+    status: s.step_order === 1 ? 'in_progress' : 'pending',
+  }));
+  await service.from('gr_task_steps').insert(rows);
 }
 
 // Entities
@@ -48,6 +125,8 @@ export async function createGRTask(taskData: any) {
     requested_by: employee.id,
   }).select().single();
   if (error) throw new Error(error.message);
+  // Auto-generate workflow steps
+  await generateGRTaskSteps(service, data.id, data.task_type);
   return data;
 }
 
@@ -90,6 +169,121 @@ export async function getGRAlerts() {
   return data || [];
 }
 
+// ── Entity Detail ─────────────────────────────────────────────
+export async function getGREntity(id: string) {
+  const { service } = await getGRAccess();
+  const { data } = await service.from('gr_entities').select('*').eq('id', id).single();
+  return data;
+}
+
+export async function getEntityScalesAndTrademarks(entityId: string) {
+  const { service } = await getGRAccess();
+  const [{ data: scales }, { data: trademarks }] = await Promise.all([
+    service.from('gr_scales').select('*').eq('entity_id', entityId).order('created_at'),
+    service.from('gr_trademarks').select('*').eq('entity_id', entityId).order('created_at'),
+  ]);
+  return { scales: scales || [], trademarks: trademarks || [] };
+}
+
+// ── Task Detail ───────────────────────────────────────────────
+export async function getGRTaskDetail(id: string) {
+  const { service } = await getGRAccess();
+  const [{ data: task }, { data: steps }] = await Promise.all([
+    service.from('gr_tasks').select('*').eq('id', id).single(),
+    service.from('gr_task_steps').select('*').eq('task_id', id).order('step_order'),
+  ]);
+  return task ? { task, steps: steps || [] } : null;
+}
+
+export async function completeGRTaskStep(stepId: string, notes: string) {
+  const { service, employee } = await getGRAccess();
+  const { error } = await service.from('gr_task_steps')
+    .update({ status: 'completed', actor_id: employee.id, notes, completed_at: new Date().toISOString() })
+    .eq('id', stepId);
+  if (error) throw new Error(error.message);
+}
+
+export async function updateGRTask(taskId: string, updates: Record<string, any>) {
+  const { service } = await getGRAccess();
+  const { error } = await service.from('gr_tasks').update(updates).eq('id', taskId);
+  if (error) throw new Error(error.message);
+}
+
+// ── Violation Detail ──────────────────────────────────────────
+export async function getGRViolationDetail(id: string) {
+  const { service } = await getGRAccess();
+  const { data } = await service.from('gr_violations').select('*').eq('id', id).single();
+  return data;
+}
+
+export async function updateGRViolation(id: string, updates: Record<string, any>) {
+  const { service } = await getGRAccess();
+  const { error } = await service.from('gr_violations').update(updates).eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+// ── Workshops ─────────────────────────────────────────────────
+export async function getGRWorkshops() {
+  const { service } = await getGRAccess();
+  const { data } = await service.from('gr_workshops').select('*').order('workshop_date', { ascending: false });
+  return data || [];
+}
+
+export async function createGRWorkshop(workshopData: Record<string, any>) {
+  const { service } = await getGRAccess();
+  const { data, error } = await service.from('gr_workshops').insert(workshopData).select().single();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+// ── Alerts ────────────────────────────────────────────────────
+export async function getGRAlertsAll() {
+  const { service } = await getGRAccess();
+  const { data } = await service.from('gr_alerts').select('*').order('alert_date', { ascending: false }).limit(200);
+  return data || [];
+}
+
+export async function acknowledgeGRAlert(alertId: string) {
+  const { service, employee } = await getGRAccess();
+  const { error } = await service.from('gr_alerts')
+    .update({ is_acknowledged: true, acknowledged_by: employee.id, acknowledged_at: new Date().toISOString() })
+    .eq('id', alertId);
+  if (error) throw new Error(error.message);
+}
+
+export async function createRenewalTaskFromAlert(alertId: string, entityId: string, licenseId: string) {
+  const { service, employee } = await getGRAccess();
+  const { data: numData } = await service.rpc('next_gr_task_number', { p_type: 'annual_renewal' });
+  const { data: task, error } = await service.from('gr_tasks').insert({
+    task_number: numData || `GR-REN-${Date.now()}`,
+    task_type: 'annual_renewal', entity_id: entityId, license_id: licenseId,
+    title: 'تجديد ترخيص — Annual License Renewal',
+    status: 'draft', priority: 'high',
+    requested_by: employee.id, assigned_to: employee.id,
+  }).select().single();
+  if (error) throw new Error(error.message);
+  await service.from('gr_alerts').update({ task_id: task.id }).eq('id', alertId);
+  return task;
+}
+
+// ── Performance ───────────────────────────────────────────────
+export async function getGRPerformanceData() {
+  const { service } = await getGRAccess();
+  const [{ data: tasks }, { data: violations }, { data: employees }] = await Promise.all([
+    service.from('gr_tasks').select('id, task_type, status, assigned_to, is_on_time, created_at, completed_at, due_date'),
+    service.from('gr_violations').select('id, violation_amount, resolution_path, created_at'),
+    service.from('employees').select('id, full_name_ar, full_name_en'),
+  ]);
+  return { tasks: tasks || [], violations: violations || [], employees: employees || [] };
+}
+
+export async function regenerateGRTaskSteps(taskId: string, taskType: string) {
+  const { service } = await getGRAccess();
+  // Delete existing steps first
+  await service.from('gr_task_steps').delete().eq('task_id', taskId);
+  await generateGRTaskSteps(service, taskId, taskType);
+}
+
 // Dashboard stats
 export async function getGRStats() {
   const { service } = await getGRAccess();
@@ -126,4 +320,11 @@ export async function getGRStats() {
     activeCommittees: (committees || []).filter(c => c.status === 'active').length,
     tasksByType: (tasks || []).reduce((acc: any, t: any) => { acc[t.task_type] = (acc[t.task_type] || 0) + 1; return acc; }, {}),
   };
+}
+
+// ── GR Request Token ──────────────────────────────────────────
+export async function generateLicenseToken(licenseId: string, entityId: string): Promise<string> {
+  await getGRAccess(); // verify role
+  const { createLicenseToken } = await import('@/lib/utils/gr-token');
+  return createLicenseToken(licenseId, entityId);
 }

@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 
 const groupNames: Record<number, { ar: string; en: string }> = {
@@ -50,9 +51,9 @@ export default function EntitiesClient({ entities }: any) {
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {filtered.map((e: any) => (
-                  <tr key={e.id} className="hover:bg-slate-50">
+                  <tr key={e.id} className="hover:bg-slate-50 cursor-pointer">
                     <td className="px-4 py-3">
-                      <p className="font-medium text-slate-900">{lang === 'ar' ? e.name_ar : e.name_en || e.name_ar}</p>
+                      <Link href={`/dashboard/gr/entities/${e.id}`} className="font-medium text-slate-900 hover:text-blue-700 hover:underline block">{lang === 'ar' ? e.name_ar : e.name_en || e.name_ar}</Link>
                     </td>
                     <td className="px-4 py-3 text-slate-600">{groupNames[e.group_number]?.[lang] || `Group ${e.group_number}`}</td>
                     <td className="px-4 py-3"><span className="px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600">{e.entity_type}</span></td>
