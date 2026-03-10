@@ -4,7 +4,6 @@ import { useState, useTransition } from 'react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { getStatusColor, formatDateTime, formatCurrency } from '@/lib/utils';
 import RequestActions from '@/components/requests/RequestActions';
-import ExecutionActions from '@/components/requests/ExecutionActions';
 import { cancelRequest, resubmitRequest, completeRequest } from '@/app/actions/requests';
 
 const statusLabels: Record<string, { ar: string; en: string }> = {
@@ -22,6 +21,7 @@ const statusLabels: Record<string, { ar: string; en: string }> = {
   pending_execution:     { ar: 'بانتظار التنفيذ',      en: 'Pending Execution' },
   in_progress:           { ar: 'قيد التنفيذ',          en: 'In Progress' },
   assigned_to_employee:  { ar: 'مُسند لموظف',          en: 'Assigned' },
+  forwarded:             { ar: 'مُحوّل',                en: 'Forwarded' },
 };
 
 const actionLabels: Record<string, { ar: string; en: string }> = {
@@ -39,6 +39,7 @@ const actionLabels: Record<string, { ar: string; en: string }> = {
   employee_completed:    { ar: 'أنجز الموظف المهمة',     en: 'employee completed task' },
   completed:             { ar: 'تم الإنجاز النهائي',     en: 'final completion' },
   returned_to_employee:  { ar: 'أُعيد للموظف',           en: 'returned to employee' },
+  forwarded:             { ar: 'حوّل الطلب',             en: 'forwarded' },
 };
 
 const leaveTypeLabels: Record<string, { ar: string; en: string }> = {
@@ -80,6 +81,8 @@ export interface RequestDetailProps {
   isAssignedEmployee?: boolean;
   hasEmployeeCompleted?: boolean;
   assignedEmployee?: any;
+  companies?: any[];
+  departments?: any[];
 }
 
 function filterActionsForViewer(
@@ -137,6 +140,7 @@ function filterActionsForViewer(
 export default function RequestDetailClient({
   request, actions, approvalSteps, evidence, pendingStep, currentEmployeeId, currentEmployeeDeptId, isAdmin, currentEmployeeRoles,
   showExecution = false, isDeptManagerOfDest = false, isAssignedEmployee = false, hasEmployeeCompleted = false, assignedEmployee = null,
+  companies = [], departments = [],
 }: RequestDetailProps) {
   const { lang } = useLanguage();
   const [isPending, startTransition] = useTransition();
@@ -388,27 +392,19 @@ export default function RequestDetailClient({
             )}
           </div>
 
-          {/* Approval action panel (for approvers) */}
-          {pendingStep && (
+          {/* Unified action panel — approval + execution */}
+          {(pendingStep || showExecution) && (
             <RequestActions
               requestId={request.id}
-              stepId={pendingStep.id}
-              approverRole={pendingStep.approverRole}
-              currentDeptId={currentEmployeeDeptId}
-            />
-          )}
-
-          {/* Execution phase actions */}
-          {showExecution && (
-            <ExecutionActions
-              requestId={request.id}
+              stepId={pendingStep?.id}
               requestStatus={request.status}
-              assignedTo={request.assigned_to ?? null}
               currentEmployeeId={currentEmployeeId}
               isDeptManager={isDeptManagerOfDest}
               isAssignedEmployee={isAssignedEmployee}
               hasEmployeeCompleted={hasEmployeeCompleted}
-              departmentId={currentEmployeeDeptId ?? ''}
+              departmentId={currentEmployeeDeptId}
+              companies={companies}
+              departments={departments}
             />
           )}
 
@@ -486,7 +482,8 @@ export default function RequestDetailClient({
                           action.action === 'approved'   ? 'bg-emerald-500' :
                           action.action === 'rejected'   ? 'bg-red-500' :
                           action.action === 'sent_back'  ? 'bg-amber-500' :
-                          action.action === 'completed'  ? 'bg-blue-500' :
+                          action.action === 'completed'  ? 'bg-emerald-600' :
+                          action.action === 'forwarded'  ? 'bg-blue-500' :
                           action.action === 'cancelled'  ? 'bg-slate-400' : 'bg-blue-500'
                         }`} />
                         {i < visibleActions.length - 1 && <div className="w-px flex-1 bg-slate-200 my-1" />}

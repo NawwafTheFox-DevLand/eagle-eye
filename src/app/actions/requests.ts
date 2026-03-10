@@ -352,7 +352,7 @@ async function generateApprovalSteps(service: any, request: any, requester: any)
 }
 
 // ── Approve ───────────────────────────────────────────────────
-export async function approveRequest(requestId: string, note: string, stepId: string) {
+export async function approveRequest(requestId: string, note: string, stepId: string, evidenceForm?: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
@@ -565,10 +565,15 @@ export async function approveRequest(requestId: string, note: string, stepId: st
       bodyEn:  'A request has been forwarded for your approval',
     });
   }
+
+  if (evidenceForm) {
+    const { uploadEvidence } = await import('./evidence');
+    await uploadEvidence(requestId, evidenceForm);
+  }
 }
 
 // ── Reject ────────────────────────────────────────────────────
-export async function rejectRequest(requestId: string, note: string, stepId: string) {
+export async function rejectRequest(requestId: string, note: string, stepId: string, evidenceForm?: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
@@ -613,10 +618,15 @@ export async function rejectRequest(requestId: string, note: string, stepId: str
       bodyEn:  `Your request was rejected: ${req.subject}`,
     });
   }
+
+  if (evidenceForm) {
+    const { uploadEvidence } = await import('./evidence');
+    await uploadEvidence(requestId, evidenceForm);
+  }
 }
 
 // ── Send Back ─────────────────────────────────────────────────
-export async function sendBackRequest(requestId: string, note: string, stepId?: string) {
+export async function sendBackRequest(requestId: string, note: string, stepId?: string, evidenceForm?: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
@@ -658,6 +668,78 @@ export async function sendBackRequest(requestId: string, note: string, stepId?: 
       bodyEn:  `Clarification was requested on: ${req.subject}`,
     });
   }
+
+  if (evidenceForm) {
+    const { uploadEvidence } = await import('./evidence');
+    await uploadEvidence(requestId, evidenceForm);
+  }
+}
+
+// ── Forward Request ───────────────────────────────────────────
+export async function forwardRequest(
+  requestId: string,
+  note: string,
+  targetCompanyId: string,
+  targetDeptId: string,
+  targetEmployeeId?: string,
+  stepId?: string,
+) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const service = await createServiceClient();
+  const { data: actor } = await service.from('employees').select('id').eq('auth_user_id', user.id).single();
+  if (!actor) throw new Error('Employee not found');
+
+  // Determine recipient
+  let recipientId = targetEmployeeId || null;
+  if (!recipientId) {
+    const { data: dept } = await service.from('departments').select('head_employee_id').eq('id', targetDeptId).single();
+    recipientId = dept?.head_employee_id ?? null;
+  }
+  if (!recipientId) throw new Error('No recipient found for the target department');
+
+  const { data: roles } = await service.from('user_roles').select('role').eq('employee_id', actor.id);
+  const actorRole = roles?.[0]?.role || 'employee';
+
+  // If in approval phase, complete the current step as forwarded
+  if (stepId) {
+    await service.from('approval_steps')
+      .update({ status: 'forwarded', completed_at: new Date().toISOString(), note: 'تم التحويل' })
+      .eq('id', stepId);
+  }
+
+  const { data: currentReq } = await service.from('requests').select('status, subject, requester_id').eq('id', requestId).single();
+
+  // Update request destination and route to execution
+  await service.from('requests').update({
+    destination_company_id: targetCompanyId || undefined,
+    destination_dept_id: targetDeptId,
+    status: 'pending_execution',
+    assigned_to: recipientId,
+  }).eq('id', requestId);
+
+  await service.from('request_actions').insert({
+    request_id:  requestId,
+    action:      'forwarded',
+    actor_id:    actor.id,
+    actor_role:  actorRole,
+    rationale:   note,
+    from_status: currentReq?.status || 'under_review',
+    to_status:   'pending_execution',
+  });
+
+  // Notify recipient
+  await createNotification(service, {
+    recipientId,
+    requestId,
+    type:    'action_required',
+    titleAr: 'تم تحويل طلب إليك',
+    titleEn: 'Request Forwarded to You',
+    bodyAr:  `تم تحويل طلب لتنفيذه: ${currentReq?.subject || ''}`,
+    bodyEn:  `A request has been forwarded to you for execution: ${currentReq?.subject || ''}`,
+  });
 }
 
 // ── Cancel Request ────────────────────────────────────────────
@@ -840,7 +922,7 @@ export async function completeRequest(requestId: string, note: string) {
 
 // ── Execution Phase Actions ───────────────────────────────────
 
-export async function handleMyself(requestId: string, note: string) {
+export async function handleMyself(requestId: string, note: string, evidenceForm?: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
@@ -856,9 +938,13 @@ export async function handleMyself(requestId: string, note: string) {
     request_id: requestId, action: 'handle_myself', actor_id: employee.id,
     actor_role: 'department_manager', from_status: 'pending_execution', to_status: 'in_progress', note,
   });
+  if (evidenceForm) {
+    const { uploadEvidence } = await import('./evidence');
+    await uploadEvidence(requestId, evidenceForm);
+  }
 }
 
-export async function assignExecutionToEmployee(requestId: string, employeeId: string, note: string) {
+export async function assignExecutionToEmployee(requestId: string, employeeId: string, note: string, evidenceForm?: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
@@ -882,9 +968,13 @@ export async function assignExecutionToEmployee(requestId: string, employeeId: s
       bodyAr: `تم تعيينك للعمل على طلب`, bodyEn: 'A request has been assigned to you for execution',
     });
   }
+  if (evidenceForm) {
+    const { uploadEvidence } = await import('./evidence');
+    await uploadEvidence(requestId, evidenceForm);
+  }
 }
 
-export async function markDoneByEmployee(requestId: string, note: string) {
+export async function markDoneByEmployee(requestId: string, note: string, evidenceForm?: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
@@ -909,9 +999,13 @@ export async function markDoneByEmployee(requestId: string, note: string) {
       });
     }
   }
+  if (evidenceForm) {
+    const { uploadEvidence } = await import('./evidence');
+    await uploadEvidence(requestId, evidenceForm);
+  }
 }
 
-export async function finalComplete(requestId: string, note: string) {
+export async function finalComplete(requestId: string, note: string, evidenceForm?: FormData) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
@@ -932,6 +1026,10 @@ export async function finalComplete(requestId: string, note: string) {
       type: 'status_update', titleAr: 'اكتمل تنفيذ طلبك', titleEn: 'Your Request Has Been Completed',
       bodyAr: `تم تنفيذ طلبك بنجاح: ${request.subject}`, bodyEn: `Your request has been completed: ${request.subject}`,
     });
+  }
+  if (evidenceForm) {
+    const { uploadEvidence } = await import('./evidence');
+    await uploadEvidence(requestId, evidenceForm);
   }
 }
 

@@ -21,6 +21,7 @@ const statusLabels: Record<string, { ar: string; en: string }> = {
   pending_execution:     { ar: 'بانتظار التنفيذ',      en: 'Pending Execution' },
   in_progress:           { ar: 'قيد التنفيذ',          en: 'In Progress' },
   assigned_to_employee:  { ar: 'مُسند لموظف',          en: 'Assigned' },
+  forwarded:             { ar: 'مُحوّل',                en: 'Forwarded' },
 };
 
 const typeLabels: Record<string, { ar: string; en: string }> = {

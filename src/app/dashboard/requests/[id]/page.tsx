@@ -3,6 +3,60 @@ import { getSessionEmployee } from '@/app/actions/requests';
 import { redirect, notFound } from 'next/navigation';
 import RequestDetailClient from './RequestDetailClient';
 
+async function checkRequestAccess(service: any, request: any, employee: any): Promise<boolean> {
+  const roles = employee.roles?.map((r: any) => r.role) || [];
+
+  // Super admin always has access
+  if (roles.includes('super_admin')) return true;
+
+  // Requester
+  if (request.requester_id === employee.id) return true;
+
+  // Assigned employee
+  if (request.assigned_to === employee.id) return true;
+
+  // Approver in the chain
+  const { data: steps } = await service
+    .from('approval_steps')
+    .select('id')
+    .eq('request_id', request.id)
+    .eq('approver_id', employee.id)
+    .limit(1);
+  if (steps && steps.length > 0) return true;
+
+  // Dept manager of origin or destination dept
+  const deptIds = [request.origin_dept_id, request.destination_dept_id].filter(Boolean);
+  if (deptIds.length > 0) {
+    const { data: managedDepts } = await service
+      .from('departments')
+      .select('id')
+      .in('id', deptIds)
+      .eq('head_employee_id', employee.id);
+    if (managedDepts && managedDepts.length > 0) return true;
+  }
+
+  // Company CEO of origin or destination company
+  const companyIds = [request.origin_company_id, request.destination_company_id].filter(Boolean);
+  if (companyIds.length > 0) {
+    const { data: ceoCompanies } = await service
+      .from('companies')
+      .select('id')
+      .in('id', companyIds)
+      .eq('ceo_employee_id', employee.id);
+    if (ceoCompanies && ceoCompanies.length > 0) return true;
+  }
+
+  // Holding company CEO
+  const { data: holding } = await service
+    .from('companies')
+    .select('ceo_employee_id')
+    .eq('is_holding', true)
+    .maybeSingle();
+  if (holding?.ceo_employee_id === employee.id) return true;
+
+  return false;
+}
+
 export default async function RequestDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
@@ -21,6 +75,10 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
     .single();
 
   if (!requestRaw) notFound();
+
+  // ── Access check ───────────────────────────────────────────────
+  const hasAccess = await checkRequestAccess(service, requestRaw, employee);
+  if (!hasAccess) redirect('/dashboard/requests');
 
   // ── 2. Fetch actions and steps (plain columns, no joins) ────────
   const [{ data: actionsRaw }, { data: stepsRaw }, { data: evidenceRaw }] = await Promise.all([
@@ -49,10 +107,12 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
   const allEmpIds  = [...new Set([requestRaw.requester_id, ...actorIds, ...approverIds].filter(Boolean))];
 
   // ── 4. Batch-fetch all related data in parallel ────────────────
-  const [{ data: employees }, { data: companies }, { data: departments }] = await Promise.all([
+  const [{ data: employees }, { data: companies }, { data: departments }, { data: allCompanies }, { data: allDepartments }] = await Promise.all([
     allEmpIds.length  > 0 ? service.from('employees').select('id, full_name_ar, full_name_en, employee_code').in('id', allEmpIds)  : Promise.resolve({ data: [] as any[] }),
     companyIds.length > 0 ? service.from('companies').select('id, name_ar, name_en, code').in('id', companyIds)                    : Promise.resolve({ data: [] as any[] }),
     deptIds.length    > 0 ? service.from('departments').select('id, name_ar, name_en, code').in('id', deptIds)                     : Promise.resolve({ data: [] as any[] }),
+    service.from('companies').select('id, code, name_ar, name_en').eq('is_active', true).order('name_ar'),
+    service.from('departments').select('id, code, name_ar, name_en, company_id').eq('is_active', true).order('name_ar'),
   ]);
 
   // ── 5. Generate signed URLs for evidence files ─────────────────
@@ -147,6 +207,8 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
       isAssignedEmployee={isAssignedEmployee}
       hasEmployeeCompleted={hasEmployeeCompleted}
       assignedEmployee={assignedEmployee}
+      companies={allCompanies ?? []}
+      departments={allDepartments ?? []}
     />
   );
 }
