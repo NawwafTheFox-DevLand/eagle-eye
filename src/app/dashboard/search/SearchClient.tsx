@@ -1,240 +1,201 @@
 'use client';
-
-import { useState, useTransition } from 'react';
+import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { getStatusColor, getPriorityColor, formatDate } from '@/lib/utils';
-import { searchRequests } from '@/app/actions/search';
 
-const statusLabels: Record<string, { ar: string; en: string }> = {
-  draft:                 { ar: 'مسودة',              en: 'Draft' },
-  submitted:             { ar: 'مقدم',               en: 'Submitted' },
-  under_review:          { ar: 'قيد المراجعة',        en: 'Under Review' },
-  pending_clarification: { ar: 'بانتظار توضيح',       en: 'Pending Clarification' },
-  returned:              { ar: 'مُعاد',               en: 'Returned' },
-  resubmitted:           { ar: 'مُعاد تقديمه',         en: 'Resubmitted' },
-  approved:              { ar: 'موافق عليه',           en: 'Approved' },
-  rejected:              { ar: 'مرفوض',               en: 'Rejected' },
-  completed:             { ar: 'مكتمل',               en: 'Completed' },
-  cancelled:             { ar: 'ملغي',                en: 'Cancelled' },
-  archived:              { ar: 'مؤرشف',               en: 'Archived' },
-  pending_execution:     { ar: 'بانتظار التنفيذ',      en: 'Pending Execution' },
-  in_progress:           { ar: 'قيد التنفيذ',          en: 'In Progress' },
-  assigned_to_employee:  { ar: 'مُسند لموظف',          en: 'Assigned' },
-  forwarded:             { ar: 'مُحوّل',                en: 'Forwarded' },
+const STATUS_LABELS: Record<string, { ar: string; en: string }> = {
+  draft:                 { ar: 'مسودة',             en: 'Draft'                 },
+  in_progress:           { ar: 'قيد المعالجة',      en: 'In Progress'           },
+  pending_clarification: { ar: 'بانتظار توضيح',     en: 'Pending Clarification' },
+  completed:             { ar: 'مكتمل',             en: 'Completed'             },
+  rejected:              { ar: 'مرفوض',             en: 'Rejected'              },
+  cancelled:             { ar: 'ملغي',              en: 'Cancelled'             },
 };
 
-const typeLabels: Record<string, { ar: string; en: string }> = {
-  general_internal:      { ar: 'طلب داخلي عام',       en: 'General Internal' },
-  intercompany:          { ar: 'طلب بين الشركات',      en: 'Intercompany' },
-  cross_department:      { ar: 'طلب بين الأقسام',      en: 'Cross-Department' },
-  fund_disbursement:     { ar: 'صرف مالي',              en: 'Fund Disbursement' },
-  leave_approval:        { ar: 'إجازة',                 en: 'Leave' },
-  promotion:             { ar: 'ترقية',                 en: 'Promotion' },
-  demotion_disciplinary: { ar: 'تأديبي',                en: 'Disciplinary' },
-  create_department:     { ar: 'إنشاء قسم',             en: 'New Department' },
-  create_company:        { ar: 'إنشاء شركة',            en: 'New Company' },
-  create_position:       { ar: 'إنشاء وظيفة',           en: 'New Position' },
+const STATUS_COLORS: Record<string, string> = {
+  draft:                 'bg-slate-100 text-slate-600',
+  in_progress:           'bg-blue-100 text-blue-700',
+  pending_clarification: 'bg-amber-100 text-amber-700',
+  completed:             'bg-emerald-100 text-emerald-700',
+  rejected:              'bg-red-100 text-red-700',
+  cancelled:             'bg-slate-100 text-slate-500',
 };
 
-const priorityLabels: Record<string, { ar: string; en: string }> = {
-  urgent: { ar: 'عاجل',   en: 'Urgent' },
-  high:   { ar: 'عالي',   en: 'High' },
-  normal: { ar: 'عادي',   en: 'Normal' },
-  low:    { ar: 'منخفض',  en: 'Low' },
+const PRIORITY_LABELS: Record<string, { ar: string; en: string }> = {
+  low:    { ar: 'منخفض', en: 'Low'    },
+  normal: { ar: 'عادي',  en: 'Normal' },
+  high:   { ar: 'مهم',   en: 'High'   },
+  urgent: { ar: 'عاجل',  en: 'Urgent' },
+};
+
+const PRIORITY_COLORS: Record<string, string> = {
+  low:    'bg-slate-100 text-slate-600',
+  normal: 'bg-blue-50 text-blue-600',
+  high:   'bg-amber-100 text-amber-700',
+  urgent: 'bg-red-100 text-red-700',
+};
+
+const TYPE_LABELS: Record<string, { ar: string; en: string }> = {
+  general_internal:      { ar: 'طلب داخلي عام',    en: 'General Internal'  },
+  cross_department:      { ar: 'طلب بين الأقسام',   en: 'Cross-Department'  },
+  intercompany:          { ar: 'طلب بين الشركات',   en: 'Intercompany'      },
+  fund_disbursement:     { ar: 'طلب صرف مالي',      en: 'Fund Disbursement' },
+  leave_approval:        { ar: 'طلب إجازة',         en: 'Leave Approval'    },
+  promotion:             { ar: 'طلب ترقية',         en: 'Promotion'         },
+  demotion_disciplinary: { ar: 'طلب تأديبي',        en: 'Disciplinary'      },
+  create_department:     { ar: 'إنشاء قسم',         en: 'Create Department' },
+  create_company:        { ar: 'إنشاء شركة',        en: 'Create Company'    },
+  create_position:       { ar: 'إنشاء وظيفة',       en: 'Create Position'   },
 };
 
 interface Props {
-  companies: { id: string; name_ar: string; name_en: string }[];
-  departments: { id: string; name_ar: string; name_en: string }[];
+  requests: any[];
+  empMap: Record<string, any>;
+  companies: any[];
+  roleLevel: string;
 }
 
-export default function SearchClient({ companies, departments }: Props) {
+export default function SearchClient({ requests, empMap, companies, roleLevel }: Props) {
   const { lang } = useLanguage();
-  const [isPending, startTransition] = useTransition();
+  const isAr = lang === 'ar';
 
   const [query, setQuery] = useState('');
-  const [status, setStatus] = useState('');
-  const [requestType, setRequestType] = useState('');
-  const [priority, setPriority] = useState('');
-  const [companyId, setCompanyId] = useState('');
-  const [deptId, setDeptId] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [priorityFilter, setPriorityFilter] = useState('');
+  const [companyFilter, setCompanyFilter] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
-  const [results, setResults] = useState<any[]>([]);
-  const [hasSearched, setHasSearched] = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    startTransition(async () => {
-      const data = await searchRequests({
-        q: query || undefined,
-        status: status || undefined,
-        request_type: requestType || undefined,
-        priority: priority || undefined,
-        company_id: companyId || undefined,
-        dept_id: deptId || undefined,
-        from_date: fromDate || undefined,
-        to_date: toDate || undefined,
-      });
-      setResults(data);
-      setHasSearched(true);
+  const showCompanyFilter = ['super_admin', 'holding_ceo', 'company_ceo'].includes(roleLevel);
+
+  const results = useMemo(() => {
+    const q = query.toLowerCase().trim();
+    return requests.filter(r => {
+      if (q && !r.request_number?.toLowerCase().includes(q) && !r.subject?.toLowerCase().includes(q) && !r.description?.toLowerCase().includes(q)) return false;
+      if (statusFilter && r.status !== statusFilter) return false;
+      if (typeFilter && r.request_type !== typeFilter) return false;
+      if (priorityFilter && r.priority !== priorityFilter) return false;
+      if (companyFilter && r.origin_company_id !== companyFilter) return false;
+      if (fromDate && r.created_at < fromDate) return false;
+      if (toDate && r.created_at > toDate + 'T23:59:59') return false;
+      return true;
     });
+  }, [requests, query, statusFilter, typeFilter, priorityFilter, companyFilter, fromDate, toDate]);
+
+  const hasFilters = query || statusFilter || typeFilter || priorityFilter || companyFilter || fromDate || toDate;
+
+  function clearAll() {
+    setQuery(''); setStatusFilter(''); setTypeFilter(''); setPriorityFilter('');
+    setCompanyFilter(''); setFromDate(''); setToDate('');
   }
 
-  const t = {
-    ar: {
-      title: 'بحث في الطلبات',
-      placeholder: 'رقم الطلب، الموضوع، أو التفاصيل...',
-      statusLabel: 'الحالة', typeLabel: 'النوع', priorityLabel: 'الأولوية',
-      companyLabel: 'الشركة', deptLabel: 'القسم',
-      fromLabel: 'من تاريخ', toLabel: 'إلى تاريخ',
-      searchBtn: 'بحث',
-      allStatuses: 'جميع الحالات', allTypes: 'جميع الأنواع',
-      allPriorities: 'جميع الأولويات', allCompanies: 'جميع الشركات', allDepts: 'جميع الأقسام',
-      noResults: 'لا توجد نتائج', initialState: 'اكتب للبحث في الطلبات', searching: 'جاري البحث...',
-    },
-    en: {
-      title: 'Search Requests',
-      placeholder: 'Request number, subject, or description...',
-      statusLabel: 'Status', typeLabel: 'Type', priorityLabel: 'Priority',
-      companyLabel: 'Company', deptLabel: 'Department',
-      fromLabel: 'From Date', toLabel: 'To Date',
-      searchBtn: 'Search',
-      allStatuses: 'All Statuses', allTypes: 'All Types',
-      allPriorities: 'All Priorities', allCompanies: 'All Companies', allDepts: 'All Departments',
-      noResults: 'No results', initialState: 'Enter search terms above', searching: 'Searching...',
-    },
-  }[lang];
+  const getName = (id: string | null) => {
+    if (!id) return '—';
+    const e = empMap[id];
+    return e ? (isAr ? e.full_name_ar : e.full_name_en || e.full_name_ar) : '—';
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">{t.title}</h1>
+        <h1 className="text-2xl font-bold text-slate-900">{isAr ? 'البحث' : 'Search'}</h1>
+        <p className="text-slate-500 text-sm mt-1">
+          {isAr ? `${results.length} نتيجة` : `${results.length} result${results.length !== 1 ? 's' : ''}`}
+        </p>
       </div>
 
-      {/* Search form */}
-      <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-4">
-        <div>
-          <input
-            type="text"
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder={t.placeholder}
-            className="input-field w-full"
-          />
-        </div>
-
-        {/* Row 1: Status, Type, Priority */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">{t.statusLabel}</label>
-            <select value={status} onChange={e => setStatus(e.target.value)} className="input-field text-sm">
-              <option value="">{t.allStatuses}</option>
-              {Object.entries(statusLabels).map(([k, v]) => (
-                <option key={k} value={k}>{v[lang]}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">{t.typeLabel}</label>
-            <select value={requestType} onChange={e => setRequestType(e.target.value)} className="input-field text-sm">
-              <option value="">{t.allTypes}</option>
-              {Object.entries(typeLabels).map(([k, v]) => (
-                <option key={k} value={k}>{v[lang]}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">{t.priorityLabel}</label>
-            <select value={priority} onChange={e => setPriority(e.target.value)} className="input-field text-sm">
-              <option value="">{t.allPriorities}</option>
-              {Object.entries(priorityLabels).map(([k, v]) => (
-                <option key={k} value={k}>{v[lang]}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Row 2: Company, Department, From Date, To Date */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">{t.companyLabel}</label>
-            <select value={companyId} onChange={e => setCompanyId(e.target.value)} className="input-field text-sm">
-              <option value="">{t.allCompanies}</option>
-              {companies.map(c => (
-                <option key={c.id} value={c.id}>{lang === 'ar' ? c.name_ar : (c.name_en || c.name_ar)}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">{t.deptLabel}</label>
-            <select value={deptId} onChange={e => setDeptId(e.target.value)} className="input-field text-sm">
-              <option value="">{t.allDepts}</option>
-              {departments.map(d => (
-                <option key={d.id} value={d.id}>{lang === 'ar' ? d.name_ar : (d.name_en || d.name_ar)}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">{t.fromLabel}</label>
-            <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)} className="input-field text-sm" dir="ltr" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-500 mb-1">{t.toLabel}</label>
-            <input type="date" value={toDate} onChange={e => setToDate(e.target.value)} className="input-field text-sm" dir="ltr" />
-          </div>
-        </div>
-
-        <div className="flex justify-end">
-          <button type="submit" disabled={isPending} className="btn-primary text-sm disabled:opacity-50">
-            {isPending ? t.searching : `🔍 ${t.searchBtn}`}
+      {/* Search input */}
+      <div className="relative">
+        <span className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">🔍</span>
+        <input
+          type="text" value={query} onChange={e => setQuery(e.target.value)}
+          placeholder={isAr ? 'ابحث في رقم الطلب، الموضوع، الوصف...' : 'Search request #, subject, description...'}
+          className="input-field ps-9 pe-9 w-full text-sm"
+          autoFocus
+        />
+        {query && (
+          <button onClick={() => setQuery('')}
+            className="absolute end-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-sm">
+            ✕
           </button>
-        </div>
-      </form>
+        )}
+      </div>
+
+      {/* Filter row */}
+      <div className="flex flex-wrap gap-3">
+        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="input-field w-auto text-sm">
+          <option value="">{isAr ? 'كل الحالات' : 'All Statuses'}</option>
+          {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{isAr ? v.ar : v.en}</option>)}
+        </select>
+        <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} className="input-field w-auto text-sm">
+          <option value="">{isAr ? 'كل الأنواع' : 'All Types'}</option>
+          {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{isAr ? v.ar : v.en}</option>)}
+        </select>
+        <select value={priorityFilter} onChange={e => setPriorityFilter(e.target.value)} className="input-field w-auto text-sm">
+          <option value="">{isAr ? 'كل الأولويات' : 'All Priorities'}</option>
+          {Object.entries(PRIORITY_LABELS).map(([k, v]) => <option key={k} value={k}>{isAr ? v.ar : v.en}</option>)}
+        </select>
+        {showCompanyFilter && companies.length > 0 && (
+          <select value={companyFilter} onChange={e => setCompanyFilter(e.target.value)} className="input-field w-auto text-sm">
+            <option value="">{isAr ? 'كل الشركات' : 'All Companies'}</option>
+            {companies.map(c => <option key={c.id} value={c.id}>{isAr ? c.name_ar : c.name_en || c.name_ar}</option>)}
+          </select>
+        )}
+        <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
+          className="input-field w-auto text-sm" title={isAr ? 'من تاريخ' : 'From'} />
+        <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
+          className="input-field w-auto text-sm" title={isAr ? 'إلى تاريخ' : 'To'} />
+        {hasFilters && (
+          <button onClick={clearAll} className="text-sm text-slate-500 hover:text-slate-700 px-3 py-2">
+            {isAr ? 'مسح الكل' : 'Clear all'}
+          </button>
+        )}
+      </div>
 
       {/* Results */}
-      {!hasSearched && !isPending ? (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-12 text-center text-slate-400">
-          <span className="text-4xl block mb-3">🔍</span>
-          <p className="text-sm font-medium">{t.initialState}</p>
-        </div>
-      ) : isPending ? (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-12 text-center text-slate-400">
-          <p className="text-sm">{t.searching}</p>
-        </div>
-      ) : results.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-12 text-center text-slate-400">
-          <span className="text-4xl block mb-3">📭</span>
-          <p className="text-sm font-medium">{t.noResults}</p>
+      {results.length === 0 ? (
+        <div className="card p-12 text-center">
+          <p className="text-5xl mb-4">🔍</p>
+          <p className="text-slate-500 text-sm">{isAr ? 'لا توجد نتائج' : 'No results found'}</p>
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-          <div className="divide-y divide-slate-50">
-            {results.map((req: any) => {
-              const statusLabel   = statusLabels[req.status]?.[lang]    ?? req.status;
-              const typeLabel     = typeLabels[req.request_type]?.[lang] ?? req.request_type;
-              const priorityLabel = priorityLabels[req.priority]?.[lang] ?? req.priority;
-              const requesterName = lang === 'ar'
-                ? req.requester?.full_name_ar
-                : (req.requester?.full_name_en || req.requester?.full_name_ar);
+        <div className="card overflow-hidden">
+          <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_1fr_1.5fr_1.5fr_auto] gap-3 px-5 py-3 bg-slate-50 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+            <span>{isAr ? 'الموضوع' : 'Subject'}</span>
+            <span>{isAr ? 'النوع' : 'Type'}</span>
+            <span>{isAr ? 'الأولوية' : 'Priority'}</span>
+            <span>{isAr ? 'الحالة' : 'Status'}</span>
+            <span>{isAr ? 'مقدم الطلب' : 'Requester'}</span>
+            <span>{isAr ? 'المسؤول' : 'Assigned'}</span>
+            <span>{isAr ? 'التاريخ' : 'Date'}</span>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {results.map(req => {
+              const typeLabel = TYPE_LABELS[req.request_type];
+              const statusLabel = STATUS_LABELS[req.status];
+              const priorityLabel = PRIORITY_LABELS[req.priority];
               return (
                 <Link key={req.id} href={`/dashboard/requests/${req.id}`}
-                  className="flex items-center gap-4 px-6 py-4 hover:bg-slate-50 transition-colors">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs font-mono text-slate-400" dir="ltr">{req.request_number}</span>
-                      <span className={`status-badge ${getStatusColor(req.status)}`}>{statusLabel}</span>
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${getPriorityColor(req.priority)}`}>
-                        {priorityLabel}
-                      </span>
-                    </div>
-                    <p className="font-medium text-slate-900 truncate">{req.subject}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      {typeLabel}{requesterName ? ` • ${requesterName}` : ''}
-                    </p>
+                  className="grid md:grid-cols-[2fr_1fr_1fr_1fr_1.5fr_1.5fr_auto] gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors items-center group">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 group-hover:text-blue-600 truncate">{req.subject}</p>
+                    <p className="text-xs font-mono text-slate-400">{req.request_number}</p>
                   </div>
-                  <div className="text-xs text-slate-400 shrink-0">{formatDate(req.created_at, lang)}</div>
+                  <span className="text-xs text-slate-500 truncate">
+                    {typeLabel ? (isAr ? typeLabel.ar : typeLabel.en) : req.request_type}
+                  </span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium w-fit ${PRIORITY_COLORS[req.priority] || ''}`}>
+                    {priorityLabel ? (isAr ? priorityLabel.ar : priorityLabel.en) : req.priority}
+                  </span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium w-fit ${STATUS_COLORS[req.status] || ''}`}>
+                    {statusLabel ? (isAr ? statusLabel.ar : statusLabel.en) : req.status}
+                  </span>
+                  <span className="text-xs text-slate-600 truncate">{getName(req.requester_id)}</span>
+                  <span className="text-xs text-slate-600 truncate">{getName(req.assigned_to)}</span>
+                  <span className="text-xs text-slate-400 shrink-0">
+                    {new Date(req.created_at).toLocaleDateString(isAr ? 'ar-SA' : 'en-US', { month: 'short', day: 'numeric' })}
+                  </span>
                 </Link>
               );
             })}

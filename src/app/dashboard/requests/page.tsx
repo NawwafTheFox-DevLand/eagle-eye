@@ -1,97 +1,88 @@
-import { createServiceClient } from '@/lib/supabase/server';
-import { getSessionEmployee } from '@/app/actions/requests';
-import RequestsClient, { type RequestRow } from './RequestsClient';
+import { redirect } from 'next/navigation';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
+import RequestsClient from './RequestsClient';
 
-function getHighestRole(roles: { role: string }[]): string {
-  for (const r of ['super_admin', 'ceo', 'company_admin', 'department_manager']) {
-    if (roles.some(ur => ur.role === r)) return r;
-  }
+export const dynamic = 'force-dynamic';
+
+function getRoleLevel(roles: { role: string }[], isHolding: boolean): string {
+  if (roles.some(r => r.role === 'super_admin')) return 'super_admin';
+  if (roles.some(r => r.role === 'ceo') && isHolding) return 'holding_ceo';
+  if (roles.some(r => r.role === 'ceo') && !isHolding) return 'company_ceo';
+  if (roles.some(r => r.role === 'department_manager')) return 'dept_head';
   return 'employee';
 }
 
 export default async function RequestsPage() {
-  const [service, employee] = await Promise.all([
-    createServiceClient(),
-    getSessionEmployee(),
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
+
+  const service = await createServiceClient();
+  const { data: emp } = await service
+    .from('employees')
+    .select('id, company_id, department_id')
+    .eq('auth_user_id', user.id)
+    .single();
+  if (!emp) redirect('/login');
+
+  const [{ data: roleRows }, { data: company }] = await Promise.all([
+    service.from('user_roles').select('role, company_id').eq('employee_id', emp.id).eq('is_active', true),
+    emp.company_id
+      ? service.from('companies').select('is_holding').eq('id', emp.company_id).single()
+      : Promise.resolve({ data: null }),
   ]);
 
-  const role = getHighestRole(employee?.roles || []);
-  const isAdmin = role === 'super_admin' || role === 'ceo';
-  const isCompanyAdmin = role === 'company_admin';
-  const isDeptManager = role === 'department_manager';
+  const roles = roleRows || [];
+  const isHolding = (company as any)?.is_holding === true;
+  const roleLevel = getRoleLevel(roles, isHolding);
 
-  let requestsQuery = service
+  let query = service
     .from('requests')
-    .select('id, request_number, subject, request_type, status, priority, created_at, requester_id, origin_company_id, origin_dept_id')
+    .select('id, request_number, subject, request_type, status, priority, created_at, requester_id, assigned_to, origin_company_id')
     .order('created_at', { ascending: false })
     .limit(200);
 
-  if (isAdmin) {
-    // no filter — see all
-  } else if (isCompanyAdmin && employee?.company_id) {
-    requestsQuery = requestsQuery.or(`origin_company_id.eq.${employee.company_id},destination_company_id.eq.${employee.company_id}`);
-  } else if (isDeptManager && employee?.department_id) {
-    requestsQuery = requestsQuery.or(`origin_dept_id.eq.${employee.department_id},destination_dept_id.eq.${employee.department_id}`);
-  } else if (employee) {
-    requestsQuery = requestsQuery.eq('requester_id', employee.id);
+  if (roleLevel === 'super_admin' || roleLevel === 'holding_ceo') {
+    // see all
+  } else if (roleLevel === 'company_ceo' && emp.company_id) {
+    query = query.or(`origin_company_id.eq.${emp.company_id},destination_company_id.eq.${emp.company_id}`);
+  } else if (roleLevel === 'dept_head' && emp.department_id) {
+    query = query.or(`origin_dept_id.eq.${emp.department_id},destination_dept_id.eq.${emp.department_id}`);
+  } else {
+    query = query.eq('requester_id', emp.id);
   }
 
-  const { data: rawRequests } = await requestsQuery;
+  const { data: rawRequests } = await query;
+  const rows = rawRequests || [];
 
-  // Fetch filter UI data based on role
-  let companies: any[] = [];
-  let departments: any[] = [];
+  if (rows.length === 0) return <RequestsClient requests={[]} />;
 
-  if (isAdmin) {
-    const [{ data: co }, { data: depts }] = await Promise.all([
-      service.from('companies').select('id, name_ar, name_en').order('name_ar'),
-      service.from('departments').select('id, name_ar, name_en, company_id').order('name_ar'),
-    ]);
-    companies = co || [];
-    departments = depts || [];
-  } else if (isCompanyAdmin && employee?.company_id) {
-    const { data: depts } = await service.from('departments').select('id, name_ar, name_en, company_id').eq('company_id', employee.company_id).order('name_ar');
-    departments = depts || [];
-  }
+  const requesterIds = [...new Set(rows.map(r => r.requester_id).filter(Boolean))];
+  const assignedIds  = [...new Set(rows.map(r => r.assigned_to).filter(Boolean))];
+  const companyIds   = [...new Set(rows.map(r => r.origin_company_id).filter(Boolean))];
+  const allPersonIds = [...new Set([...requesterIds, ...assignedIds])] as string[];
 
-  let rows: RequestRow[] = [];
+  const [{ data: persons }, { data: cos }] = await Promise.all([
+    allPersonIds.length > 0
+      ? service.from('employees').select('id, full_name_ar, full_name_en').in('id', allPersonIds)
+      : Promise.resolve({ data: [] as any[] }),
+    companyIds.length > 0
+      ? service.from('companies').select('id, name_ar, name_en').in('id', companyIds)
+      : Promise.resolve({ data: [] as any[] }),
+  ]);
 
-  if (rawRequests && rawRequests.length > 0) {
-    const requesterIds = [...new Set(rawRequests.map(r => r.requester_id).filter(Boolean))];
-    const companyIds   = [...new Set(rawRequests.map(r => r.origin_company_id).filter(Boolean))];
+  const empMap = new Map((persons || []).map(p => [p.id, p]));
+  const coMap  = new Map((cos || []).map(c => [c.id, c]));
 
-    const [{ data: employees }, { data: cos }] = await Promise.all([
-      requesterIds.length > 0
-        ? service.from('employees').select('id, full_name_ar, full_name_en').in('id', requesterIds)
-        : Promise.resolve({ data: [] as any[] }),
-      companyIds.length > 0
-        ? service.from('companies').select('id, name_ar, name_en').in('id', companyIds)
-        : Promise.resolve({ data: [] as any[] }),
-    ]);
+  const requests = rows.map(r => ({
+    ...r,
+    requester_name_ar: empMap.get(r.requester_id)?.full_name_ar ?? null,
+    requester_name_en: empMap.get(r.requester_id)?.full_name_en ?? null,
+    assigned_name_ar:  r.assigned_to ? empMap.get(r.assigned_to)?.full_name_ar ?? null : null,
+    assigned_name_en:  r.assigned_to ? empMap.get(r.assigned_to)?.full_name_en ?? null : null,
+    company_name_ar:   coMap.get(r.origin_company_id)?.name_ar ?? null,
+    company_name_en:   coMap.get(r.origin_company_id)?.name_en ?? null,
+  }));
 
-    const empMap = new Map((employees || []).map(e => [e.id, e]));
-    const coMap  = new Map((cos  || []).map(c => [c.id, c]));
-
-    rows = rawRequests.map(r => {
-      const requester = empMap.get(r.requester_id);
-      const company   = coMap.get(r.origin_company_id);
-      return {
-        id:               r.id,
-        request_number:   r.request_number,
-        subject:          r.subject,
-        request_type:     r.request_type,
-        status:           r.status,
-        priority:         r.priority,
-        created_at:       r.created_at,
-        company_id:       r.origin_company_id ?? null,
-        dept_id:          r.origin_dept_id ?? null,
-        requester_name_ar: requester?.full_name_ar ?? null,
-        requester_name_en: requester?.full_name_en ?? null,
-        company_name_ar:  company?.name_ar ?? null,
-        company_name_en:  company?.name_en ?? null,
-      };
-    });
-  }
-
-  return <RequestsClient requests={rows} role={role} companies={companies} departments={departments} />;
+  return <RequestsClient requests={requests} />;
 }

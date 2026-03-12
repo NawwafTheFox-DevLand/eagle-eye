@@ -2,612 +2,813 @@
 
 import { useState, useTransition } from 'react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import { getStatusColor, formatDateTime, formatCurrency } from '@/lib/utils';
+import { useRouter } from 'next/navigation';
 import RequestActions from '@/components/requests/RequestActions';
-import { cancelRequest, resubmitRequest, completeRequest } from '@/app/actions/requests';
+import { cancelOnboarding } from '@/app/actions/onboarding';
 
-const statusLabels: Record<string, { ar: string; en: string }> = {
-  draft:                 { ar: 'مسودة',              en: 'Draft' },
-  submitted:             { ar: 'مقدم',               en: 'Submitted' },
-  under_review:          { ar: 'قيد المراجعة',        en: 'Under Review' },
-  pending_clarification: { ar: 'بانتظار توضيح',       en: 'Pending Clarification' },
-  returned:              { ar: 'مُعاد',               en: 'Returned' },
-  resubmitted:           { ar: 'مُعاد تقديمه',         en: 'Resubmitted' },
-  approved:              { ar: 'موافق عليه',           en: 'Approved' },
-  rejected:              { ar: 'مرفوض',               en: 'Rejected' },
-  completed:             { ar: 'مكتمل',               en: 'Completed' },
-  cancelled:             { ar: 'ملغي',                en: 'Cancelled' },
-  archived:              { ar: 'مؤرشف',               en: 'Archived' },
-  pending_execution:     { ar: 'بانتظار التنفيذ',      en: 'Pending Execution' },
-  in_progress:           { ar: 'قيد التنفيذ',          en: 'In Progress' },
-  assigned_to_employee:  { ar: 'مُسند لموظف',          en: 'Assigned' },
-  forwarded:             { ar: 'مُحوّل',                en: 'Forwarded' },
+// ─── Label maps ────────────────────────────────────────────────────────────────
+
+const STATUS_LABELS: Record<string, { ar: string; en: string }> = {
+  draft:                 { ar: 'مسودة',            en: 'Draft' },
+  in_progress:           { ar: 'قيد المعالجة',      en: 'In Progress' },
+  pending_clarification: { ar: 'بانتظار توضيح',     en: 'Pending Clarification' },
+  completed:             { ar: 'مكتمل',             en: 'Completed' },
+  rejected:              { ar: 'مرفوض',             en: 'Rejected' },
+  cancelled:             { ar: 'ملغي',              en: 'Cancelled' },
+  archived:              { ar: 'مؤرشف',             en: 'Archived' },
 };
 
-const actionLabels: Record<string, { ar: string; en: string }> = {
-  submitted:             { ar: 'قدّم الطلب',       en: 'submitted' },
-  approved:              { ar: 'وافق',              en: 'approved' },
-  rejected:              { ar: 'رفض',               en: 'rejected' },
-  sent_back:             { ar: 'طلب توضيح',         en: 'requested clarification' },
-  cancelled:             { ar: 'ألغى',              en: 'cancelled' },
-  resubmitted:           { ar: 'أعاد التقديم',      en: 'resubmitted' },
-  delegated_to_employee: { ar: 'عُيِّن لموظف',            en: 'assigned to employee' },
-  auto_assigned:         { ar: 'تعيين تلقائي — روتيني', en: 'auto-assigned — routine' },
-  pending_execution:     { ar: 'بانتظار التنفيذ',        en: 'awaiting execution' },
-  handle_myself:         { ar: 'تولى التنفيذ بنفسه',     en: 'handling personally' },
-  assigned_to_employee:  { ar: 'تم التعيين لموظف',       en: 'assigned to employee' },
-  employee_completed:    { ar: 'أنجز الموظف المهمة',     en: 'employee completed task' },
-  completed:             { ar: 'تم الإنجاز النهائي',     en: 'final completion' },
-  returned_to_employee:  { ar: 'أُعيد للموظف',           en: 'returned to employee' },
-  forwarded:             { ar: 'حوّل الطلب',             en: 'forwarded' },
+const STATUS_COLORS: Record<string, string> = {
+  draft:                 'bg-slate-100 text-slate-600',
+  in_progress:           'bg-blue-100 text-blue-700',
+  pending_clarification: 'bg-amber-100 text-amber-700',
+  completed:             'bg-emerald-100 text-emerald-700',
+  rejected:              'bg-red-100 text-red-700',
+  cancelled:             'bg-slate-100 text-slate-500',
+  archived:              'bg-gray-100 text-gray-500',
 };
 
-const leaveTypeLabels: Record<string, { ar: string; en: string }> = {
-  annual:    { ar: 'سنوية',       en: 'Annual' },
-  sick:      { ar: 'مرضية',       en: 'Sick' },
-  emergency: { ar: 'طارئة',       en: 'Emergency' },
-  unpaid:    { ar: 'بدون راتب',   en: 'Unpaid' },
+const TYPE_LABELS: Record<string, { ar: string; en: string }> = {
+  general_internal:      { ar: 'طلب داخلي عام',    en: 'General Internal'   },
+  cross_department:      { ar: 'طلب بين الأقسام',   en: 'Cross-Department'   },
+  intercompany:          { ar: 'طلب بين الشركات',   en: 'Intercompany'       },
+  fund_disbursement:     { ar: 'طلب صرف مالي',      en: 'Fund Disbursement'  },
+  leave_approval:        { ar: 'طلب إجازة',         en: 'Leave Approval'     },
+  promotion:             { ar: 'طلب ترقية',         en: 'Promotion'          },
+  demotion_disciplinary: { ar: 'طلب تأديبي',        en: 'Disciplinary'       },
+  create_department:     { ar: 'إنشاء قسم',         en: 'Create Department'  },
+  create_company:        { ar: 'إنشاء شركة',        en: 'Create Company'     },
+  create_position:       { ar: 'إنشاء وظيفة',       en: 'Create Position'    },
 };
 
-const CANCELLABLE = new Set(['draft', 'submitted', 'under_review', 'pending_clarification', 'pending_execution', 'in_progress', 'assigned_to_employee']);
+const ACTION_LABELS: Record<string, { ar: string; en: string }> = {
+  submitted:            { ar: 'تم التقديم',             en: 'Submitted' },
+  forwarded:            { ar: 'تم التحويل',              en: 'Forwarded' },
+  returned:             { ar: 'تم الإرجاع',              en: 'Returned' },
+  asked_requester:      { ar: 'طُلب توضيح',             en: 'Clarification Requested' },
+  resubmitted:          { ar: 'أُعيد التقديم',           en: 'Resubmitted' },
+  assigned:             { ar: 'تم التعيين',              en: 'Assigned' },
+  company_exit_stamped: { ar: 'موافقة خروج الشركة',     en: 'Company Exit Approved' },
+  finance_stamped:      { ar: 'اعتماد مالي',            en: 'Finance Approved' },
+  hr_stamped:           { ar: 'موافقة الموارد البشرية', en: 'HR Approved' },
+  ceo_stamped:          { ar: 'موافقة الرئيس التنفيذي', en: 'CEO Approved' },
+  completed:            { ar: 'تم الإنجاز',              en: 'Completed' },
+  rejected:             { ar: 'تم الرفض',               en: 'Rejected' },
+  cancelled:            { ar: 'تم الإلغاء',              en: 'Cancelled' },
+};
 
-function FileIcon({ mime }: { mime: string }) {
-  if (mime.startsWith('image/')) return <>🖼️</>;
-  if (mime === 'application/pdf') return <>📄</>;
-  if (mime.includes('word')) return <>📝</>;
-  if (mime.includes('excel') || mime.includes('spreadsheet')) return <>📊</>;
-  if (mime.includes('powerpoint') || mime.includes('presentation')) return <>📑</>;
-  return <>📎</>;
+function getActionIcon(action: string): string {
+  if (['submitted', 'completed', 'company_exit_stamped', 'finance_stamped', 'hr_stamped', 'ceo_stamped'].includes(action)) return '🟢';
+  if (['forwarded', 'assigned'].includes(action)) return '🔵';
+  if (['returned', 'asked_requester', 'resubmitted'].includes(action)) return '🟡';
+  if (['rejected', 'cancelled'].includes(action)) return '🔴';
+  return '⚪';
 }
 
-function formatBytes(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+function formatDuration(ms: number, isAr: boolean): string {
+  const totalSecs = Math.floor(ms / 1000);
+  const days  = Math.floor(totalSecs / 86400);
+  const hours = Math.floor((totalSecs % 86400) / 3600);
+  const mins  = Math.floor((totalSecs % 3600) / 60);
+  if (isAr) {
+    const parts: string[] = [];
+    if (days > 0)  parts.push(`${days} يوم`);
+    if (hours > 0) parts.push(`${hours} ساعة`);
+    if (mins > 0 || parts.length === 0) parts.push(`${mins} دقيقة`);
+    return parts.join(' و');
+  }
+  const parts: string[] = [];
+  if (days > 0)  parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (mins > 0 || parts.length === 0) parts.push(`${mins}m`);
+  return parts.join(' ');
 }
 
-export interface RequestDetailProps {
+function formatDate(dateStr: string, isAr: boolean): string {
+  return new Date(dateStr).toLocaleDateString(isAr ? 'ar-SA' : 'en-US', {
+    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+// ─── Props ─────────────────────────────────────────────────────────────────────
+
+const TASK_LABELS: Record<string, { ar: string; en: string; icon: string }> = {
+  hr_registration: { ar: 'تسجيل الموارد البشرية', en: 'HR Registration', icon: '👥' },
+  it_setup:        { ar: 'إعداد تقنية المعلومات',  en: 'IT Setup',         icon: '💻' },
+  payroll:         { ar: 'إعداد الراتب',            en: 'Payroll Setup',    icon: '💰' },
+  access_card:     { ar: 'بطاقة الوصول',            en: 'Access Card',      icon: '🪪' },
+};
+
+interface Props {
   request: any;
   actions: any[];
-  approvalSteps: any[];
   evidence: any[];
-  pendingStep: { id: string; approverRole?: string } | null;
   currentEmployeeId: string;
-  currentEmployeeDeptId?: string;
-  isAdmin: boolean;
-  currentEmployeeRoles: string[];
-  showExecution?: boolean;
-  isDeptManagerOfDest?: boolean;
-  isAssignedEmployee?: boolean;
-  hasEmployeeCompleted?: boolean;
-  assignedEmployee?: any;
-  companies?: any[];
-  departments?: any[];
+  requesterId: string;
+  requesterName: any;
+  assignedName: any;
+  originCompany: any;
+  originDept: any;
+  destCompany: any;
+  destDept: any;
+  isDeptHead: boolean;
+  isOriginCompanyCEO: boolean;
+  isHoldingCEO: boolean;
+  isFinanceHead: boolean;
+  isHRHead: boolean;
+  allCompanies: any[];
+  allDepartments: any[];
+  // Onboarding
+  isOnboardingParent?: boolean;
+  isOnboardingChild?: boolean;
+  childRequests?: any[];
+  childAssigneeMap?: Record<string, any>;
+  parentRequest?: any;
+  dependsOnStatus?: string | null;
 }
 
-function filterActionsForViewer(
-  actions: any[],
-  approvalSteps: any[],
-  currentEmployeeId: string,
-  roles: string[],
-  request: any,
-): any[] {
-  const isSuperAdmin = roles.includes('super_admin');
-  const isCEO = roles.includes('ceo');
-  const isCompanyAdmin = roles.includes('company_admin');
-  const isDeptManager = roles.includes('department_manager');
-  const isRequester = request.requester_id === currentEmployeeId;
-
-  // Super admin / CEO: full audit trail
-  if (isSuperAdmin || isCEO) return actions;
-
-  // Company admin viewing their company's request: full notes
-  if (isCompanyAdmin) return actions;
-
-  // Dept manager: full notes for their dept requests
-  if (isDeptManager) return actions;
-
-  // Requester: show own submission note + sent_back notes, hide other rationale
-  if (isRequester) {
-    return actions.map(a => {
-      if (a.action === 'submitted' && a.actor_id === currentEmployeeId) return a;
-      if (a.action === 'sent_back') return a;
-      if (a.action === 'resubmitted' && a.actor_id === currentEmployeeId) return a;
-      if (a.action === 'cancelled' && a.actor_id === currentEmployeeId) return a;
-      if (a.action === 'completed') return a;
-      return { ...a, rationale: null, note: a.actor_id === currentEmployeeId ? a.note : null };
-    });
-  }
-
-  // Current/past approver in the chain
-  const myStep = approvalSteps.find(s => s.approver_id === currentEmployeeId);
-  if (myStep) {
-    const myOrder = myStep.step_order;
-    const prevStep = approvalSteps.find(s => s.step_order === myOrder - 1);
-    const allowedActorIds = new Set([currentEmployeeId, prevStep?.approver_id].filter(Boolean));
-    return actions.map(a => {
-      if (allowedActorIds.has(a.actor_id)) return a;
-      if (a.action === 'submitted') return a;
-      if (a.action === 'sent_back' && a.actor_id === currentEmployeeId) return a;
-      return { ...a, rationale: null, note: null };
-    });
-  }
-
-  // Default: show actions without rationale
-  return actions.map(a => ({ ...a, rationale: null, note: null }));
-}
+// ─── Component ─────────────────────────────────────────────────────────────────
 
 export default function RequestDetailClient({
-  request, actions, approvalSteps, evidence, pendingStep, currentEmployeeId, currentEmployeeDeptId, isAdmin, currentEmployeeRoles,
-  showExecution = false, isDeptManagerOfDest = false, isAssignedEmployee = false, hasEmployeeCompleted = false, assignedEmployee = null,
-  companies = [], departments = [],
-}: RequestDetailProps) {
+  request,
+  actions,
+  evidence,
+  currentEmployeeId,
+  requesterId,
+  requesterName,
+  assignedName,
+  originCompany,
+  originDept,
+  destCompany,
+  destDept,
+  isDeptHead,
+  isOriginCompanyCEO,
+  isHoldingCEO,
+  isFinanceHead,
+  isHRHead,
+  allCompanies,
+  allDepartments,
+  isOnboardingParent = false,
+  isOnboardingChild = false,
+  childRequests = [],
+  childAssigneeMap = {},
+  parentRequest = null,
+  dependsOnStatus = null,
+}: Props) {
   const { lang } = useLanguage();
-  const [isPending, startTransition] = useTransition();
-  const [lifecycleError, setLifecycleError] = useState('');
-  const [lifecycleDone, setLifecycleDone] = useState('');
-  const [resubmitNote, setResubmitNote] = useState('');
-  const [completeNote, setCompleteNote] = useState('');
-  const [showCompleteForm, setShowCompleteForm] = useState(false);
+  const isAr = lang === 'ar';
+  const router = useRouter();
+  const [cancelNote, setCancelNote] = useState('');
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelPending, startCancelTransition] = useTransition();
+  const [cancelError, setCancelError] = useState('');
 
-  const isRequester = request.requester_id === currentEmployeeId;
-  const visibleActions = filterActionsForViewer(actions, approvalSteps, currentEmployeeId, currentEmployeeRoles, request);
-  const canCancel    = isRequester && CANCELLABLE.has(request.status);
-  const canResubmit  = isRequester && request.status === 'pending_clarification';
-  const canComplete  = (isAdmin || isRequester) && request.status === 'approved';
+  // ── Helpers ──────────────────────────────────────────────────────────────────
 
-  const t = {
-    ar: {
-      back: '← الرجوع',
-      details: 'التفاصيل',
-      financial: 'البيانات المالية',
-      leaveInfo: 'بيانات الإجازة',
-      hrInfo: 'بيانات الموارد البشرية',
-      files: 'المستندات والمرفقات',
-      noFiles: 'لا توجد مرفقات',
-      actionLog: 'سجل الإجراءات',
-      noActions: 'لا توجد إجراءات بعد',
-      requestInfo: 'معلومات الطلب',
-      approvalChain: 'مسار الموافقة',
-      requester: 'مقدم الطلب',
-      company: 'الشركة',
-      dept: 'القسم',
-      destination: 'الجهة المستقبلة',
-      destDept: 'القسم المستقبل',
-      created: 'تاريخ الإنشاء',
-      submitted: 'تاريخ التقديم',
-      amount: 'المبلغ',
-      payee: 'المستفيد',
-      costCenter: 'مركز التكلفة',
-      budgetSource: 'مصدر الميزانية',
-      dueDate: 'تاريخ الاستحقاق',
-      leaveType: 'نوع الإجازة',
-      from: 'من',
-      to: 'إلى',
-      effectiveDate: 'تاريخ النفاذ',
-      compensationImpact: 'الأثر على التعويض',
-      system: 'النظام',
-      download: 'تحميل',
-      cancelBtn: 'إلغاء الطلب',
-      cancelConfirm: 'تأكيد الإلغاء',
-      resubmitBtn: 'إعادة التقديم',
-      resubmitNote: 'ملاحظة التوضيح...',
-      completeBtn: 'تأكيد التنفيذ',
-      completeNote: 'ملاحظة الإتمام...',
-      lifecycleError: 'حدث خطأ',
-    },
-    en: {
-      back: '← Back',
-      details: 'Details',
-      financial: 'Financial Info',
-      leaveInfo: 'Leave Details',
-      hrInfo: 'HR Details',
-      files: 'Documents & Attachments',
-      noFiles: 'No attachments',
-      actionLog: 'Action Log',
-      noActions: 'No actions yet',
-      requestInfo: 'Request Info',
-      approvalChain: 'Approval Chain',
-      requester: 'Requester',
-      company: 'Company',
-      dept: 'Department',
-      destination: 'Destination',
-      destDept: 'Destination Dept',
-      created: 'Created',
-      submitted: 'Submitted',
-      amount: 'Amount',
-      payee: 'Payee',
-      costCenter: 'Cost Center',
-      budgetSource: 'Budget Source',
-      dueDate: 'Due Date',
-      leaveType: 'Leave Type',
-      from: 'From',
-      to: 'To',
-      effectiveDate: 'Effective Date',
-      compensationImpact: 'Compensation Impact',
-      system: 'System',
-      download: 'Download',
-      cancelBtn: 'Cancel Request',
-      cancelConfirm: 'Confirm Cancellation',
-      resubmitBtn: 'Resubmit',
-      resubmitNote: 'Clarification note...',
-      completeBtn: 'Mark as Completed',
-      completeNote: 'Completion note...',
-      lifecycleError: 'An error occurred',
-    },
-  }[lang];
+  const personName = (p: any) =>
+    p ? (isAr ? p.full_name_ar : p.full_name_en) || '—' : '—';
 
-  function doCancel() {
-    if (!confirm(lang === 'ar' ? 'هل تريد إلغاء هذا الطلب؟' : 'Are you sure you want to cancel this request?')) return;
-    setLifecycleError('');
-    startTransition(async () => {
-      try {
-        await cancelRequest(request.id);
-        setLifecycleDone(lang === 'ar' ? 'تم إلغاء الطلب' : 'Request cancelled');
-        window.location.reload();
-      } catch (e: any) { setLifecycleError(e.message); }
-    });
+  const statusLabel = (s: string) =>
+    STATUS_LABELS[s] ? (isAr ? STATUS_LABELS[s].ar : STATUS_LABELS[s].en) : s;
+
+  const actionLabel = (a: string) =>
+    ACTION_LABELS[a] ? (isAr ? ACTION_LABELS[a].ar : ACTION_LABELS[a].en) : a;
+
+  // ── Processing duration ───────────────────────────────────────────────────────
+
+  let durationEl: React.ReactNode = '—';
+  if (request.submitted_at) {
+    const start = new Date(request.submitted_at).getTime();
+    const end   = request.completed_at ? new Date(request.completed_at).getTime() : Date.now();
+    const ms    = end - start;
+    const color =
+      ms < 86_400_000  ? 'text-emerald-600' :
+      ms < 259_200_000 ? 'text-amber-600'   :
+                         'text-red-600';
+    durationEl = (
+      <span className={`text-2xl font-bold ${color}`}>
+        {formatDuration(ms, isAr)}
+      </span>
+    );
   }
 
-  function doResubmit() {
-    if (!resubmitNote.trim()) return;
-    setLifecycleError('');
-    startTransition(async () => {
-      try {
-        await resubmitRequest(request.id, resubmitNote);
-        setLifecycleDone(lang === 'ar' ? 'تمت إعادة التقديم' : 'Request resubmitted');
-        window.location.reload();
-      } catch (e: any) { setLifecycleError(e.message); }
-    });
+  // ── Gate display ─────────────────────────────────────────────────────────────
+
+  const showGates =
+    request.requires_finance || request.requires_hr || request.requires_ceo || request.company_exit_stamped_at !== null;
+
+  type Gate = { key: string; labelAr: string; labelEn: string; stamped: boolean };
+  const gates: Gate[] = [];
+  if (request.requires_finance) {
+    gates.push({ key: 'finance', labelAr: 'البوابة المالية', labelEn: 'Finance Gate', stamped: !!request.finance_stamped_at });
+  }
+  if (request.requires_hr) {
+    gates.push({ key: 'hr', labelAr: 'بوابة الموارد البشرية', labelEn: 'HR Gate', stamped: !!request.hr_stamped_at });
+  }
+  if (request.requires_ceo) {
+    gates.push({ key: 'ceo', labelAr: 'موافقة الرئيس التنفيذي', labelEn: 'CEO Gate', stamped: !!request.ceo_stamped_at });
   }
 
-  function doComplete() {
-    setLifecycleError('');
-    startTransition(async () => {
-      try {
-        await completeRequest(request.id, completeNote);
-        setLifecycleDone(lang === 'ar' ? 'تم تأكيد التنفيذ' : 'Request completed');
-        window.location.reload();
-      } catch (e: any) { setLifecycleError(e.message); }
-    });
-  }
+  // ── Timeline (newest first) ───────────────────────────────────────────────────
 
-  const requesterName = lang === 'ar'
-    ? (request.requester?.full_name_ar || request.requester?.full_name_en)
-    : (request.requester?.full_name_en || request.requester?.full_name_ar);
+  const reversedActions = [...actions].reverse();
+
+  // ── Render ────────────────────────────────────────────────────────────────────
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-3 mb-2">
-            <span className="text-sm font-mono text-slate-400" dir="ltr">{request.request_number}</span>
-            <span className={`status-badge ${getStatusColor(request.status)}`}>
-              {statusLabels[request.status]?.[lang] ?? request.status}
-            </span>
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900">{request.subject}</h1>
-        </div>
-        <a href="/dashboard/requests" className="text-sm text-slate-500 hover:text-eagle-600">{t.back}</a>
-      </div>
+    <div className={`max-w-7xl mx-auto px-4 py-6 ${isAr ? 'direction-rtl' : ''}`} dir={isAr ? 'rtl' : 'ltr'}>
 
-      {/* Lifecycle messages */}
-      {lifecycleError && (
-        <div className="px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">{lifecycleError}</div>
-      )}
-      {lifecycleDone && (
-        <div className="px-4 py-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm">{lifecycleDone}</div>
+      {/* Back button */}
+      <button
+        onClick={() => router.back()}
+        className="mb-4 text-sm text-slate-500 hover:text-slate-800 flex items-center gap-1 transition-colors"
+      >
+        {isAr ? '→ العودة' : '← Back'}
+      </button>
+
+      {/* ── Onboarding child banner ── */}
+      {isOnboardingChild && (
+        <div className="mb-4 bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-3 flex flex-wrap items-center gap-3">
+          <span className="text-2xl">🧑‍💼</span>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-indigo-900 text-sm">
+              {isAr ? 'مهمة تعيين موظف' : 'Employee Onboarding Task'}
+              {request.task_type && TASK_LABELS[request.task_type] && (
+                <span className="ms-2 text-indigo-700">
+                  — {isAr ? TASK_LABELS[request.task_type].ar : TASK_LABELS[request.task_type].en}
+                </span>
+              )}
+            </p>
+            {parentRequest && (
+              <a
+                href={`/dashboard/requests/${parentRequest.id}`}
+                className="text-xs text-indigo-600 hover:underline"
+              >
+                {isAr ? 'الطلب الرئيسي: ' : 'Parent: '}{parentRequest.request_number}
+              </a>
+            )}
+          </div>
+          {dependsOnStatus && dependsOnStatus !== 'completed' && (
+            <div className="bg-amber-100 border border-amber-300 rounded-lg px-3 py-1.5 text-xs text-amber-800 font-medium">
+              🔒 {isAr ? 'مقفلة — تنتظر مهمة أخرى' : 'Locked — awaiting dependency'}
+            </div>
+          )}
+        </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main content */}
-        <div className="lg:col-span-2 space-y-6">
 
-          {/* Description */}
-          {request.description && (
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-              <h3 className="font-semibold text-slate-900 mb-3">{t.details}</h3>
-              <p className="text-slate-700 whitespace-pre-wrap">{request.description}</p>
+        {/* ════════════ LEFT COLUMN ════════════ */}
+        <div className="lg:col-span-2 flex flex-col gap-6">
+
+          {/* 1. Header card */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <p className="font-mono text-sm text-slate-400 mb-1">{request.request_number}</p>
+            <h1 className="text-xl font-bold text-slate-800 mb-4">{request.subject || '—'}</h1>
+            <div className="flex flex-wrap gap-2">
+              {/* Status badge */}
+              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${STATUS_COLORS[request.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                {statusLabel(request.status)}
+              </span>
+              {/* Priority badge */}
+              {request.priority && (
+                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                  request.priority === 'urgent'   ? 'bg-red-100 text-red-700' :
+                  request.priority === 'high'     ? 'bg-orange-100 text-orange-700' :
+                  request.priority === 'medium'   ? 'bg-amber-100 text-amber-700' :
+                                                    'bg-slate-100 text-slate-600'
+                }`}>
+                  {request.priority === 'urgent' ? (isAr ? 'عاجل' : 'Urgent') :
+                   request.priority === 'high'   ? (isAr ? 'مرتفع' : 'High')   :
+                   request.priority === 'medium' ? (isAr ? 'متوسط' : 'Medium') :
+                                                   (isAr ? 'منخفض' : 'Low')}
+                </span>
+              )}
+              {/* Type badge */}
+              {request.request_type && (
+                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">
+                  {TYPE_LABELS[request.request_type]
+                    ? (isAr ? TYPE_LABELS[request.request_type].ar : TYPE_LABELS[request.request_type].en)
+                    : request.request_type.replace(/_/g, ' ')}
+                </span>
+              )}
+              {/* Confidential badge */}
+              {request.confidentiality === 'confidential' && (
+                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-slate-800 text-white">
+                  {isAr ? 'سري' : 'Confidential'}
+                </span>
+              )}
             </div>
-          )}
-
-          {/* Financial info */}
-          {request.amount && (
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-              <h3 className="font-semibold text-slate-900 mb-3">{t.financial}</h3>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div className="col-span-2">
-                  <span className="text-slate-500">{t.amount}: </span>
-                  <span className="font-bold text-lg">{formatCurrency(request.amount, request.currency, lang)}</span>
-                </div>
-                {request.payee       && <div><span className="text-slate-500">{t.payee}: </span>{request.payee}</div>}
-                {request.cost_center && <div><span className="text-slate-500">{t.costCenter}: </span>{request.cost_center}</div>}
-                {request.budget_source && <div><span className="text-slate-500">{t.budgetSource}: </span>{request.budget_source}</div>}
-                {request.due_date    && <div><span className="text-slate-500">{t.dueDate}: </span>{request.due_date}</div>}
-              </div>
-            </div>
-          )}
-
-          {/* Leave info */}
-          {request.leave_type && (
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-              <h3 className="font-semibold text-slate-900 mb-3">{t.leaveInfo}</h3>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div><span className="text-slate-500">{t.leaveType}: </span>{leaveTypeLabels[request.leave_type]?.[lang] ?? request.leave_type}</div>
-                {request.leave_start_date && <div><span className="text-slate-500">{t.from}: </span>{request.leave_start_date}</div>}
-                {request.leave_end_date   && <div><span className="text-slate-500">{t.to}: </span>{request.leave_end_date}</div>}
-              </div>
-            </div>
-          )}
-
-          {/* HR / Promotion info */}
-          {(request.effective_date || request.compensation_impact) && (
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-              <h3 className="font-semibold text-slate-900 mb-3">{t.hrInfo}</h3>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                {request.effective_date       && <div><span className="text-slate-500">{t.effectiveDate}: </span>{request.effective_date}</div>}
-                {request.compensation_impact  && <div className="col-span-2"><span className="text-slate-500">{t.compensationImpact}: </span>{request.compensation_impact}</div>}
-              </div>
-            </div>
-          )}
-
-          {/* Extra form_data fields */}
-          {request.form_data && Object.keys(request.form_data).length > 0 && (
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-              <h3 className="font-semibold text-slate-900 mb-3">{t.details}</h3>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                {Object.entries(request.form_data as Record<string, string>).map(([k, v]) => (
-                  <div key={k} className="col-span-2">
-                    <span className="text-slate-500 capitalize">{k.replace(/_/g, ' ')}: </span>{v}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Evidence / files */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-            <h3 className="font-semibold text-slate-900 mb-4">{t.files}</h3>
-            {evidence.length === 0 ? (
-              <p className="text-sm text-slate-400">{t.noFiles}</p>
-            ) : (
-              <div className="space-y-2">
-                {evidence.map((f: any) => (
-                  <div key={f.id} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-slate-50 border border-slate-100">
-                    <span className="text-xl shrink-0"><FileIcon mime={f.mime_type} /></span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-900 truncate">{f.file_name}</p>
-                      <p className="text-xs text-slate-400">{formatBytes(f.file_size_bytes ?? 0)} • {formatDateTime(f.created_at, lang)}</p>
-                    </div>
-                    {f.url && (
-                      <a href={f.url} target="_blank" rel="noopener noreferrer"
-                        className="text-xs text-eagle-600 hover:underline shrink-0 font-medium">
-                        {t.download}
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
 
-          {/* Unified action panel — approval + execution */}
-          {(pendingStep || showExecution) && (
-            <RequestActions
-              requestId={request.id}
-              stepId={pendingStep?.id}
-              requestStatus={request.status}
-              currentEmployeeId={currentEmployeeId}
-              isDeptManager={isDeptManagerOfDest}
-              isAssignedEmployee={isAssignedEmployee}
-              hasEmployeeCompleted={hasEmployeeCompleted}
-              departmentId={currentEmployeeDeptId}
-              companies={companies}
-              departments={departments}
-            />
-          )}
-
-          {/* Resubmit panel */}
-          {canResubmit && !lifecycleDone && (
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-6">
-              <h3 className="font-semibold text-amber-900 mb-2">
-                {lang === 'ar' ? 'مطلوب توضيح — أعد تقديم الطلب بعد التعديل' : 'Clarification Required — Resubmit with updates'}
-              </h3>
-              <textarea
-                value={resubmitNote}
-                onChange={e => setResubmitNote(e.target.value)}
-                rows={3}
-                className="input-field mb-3"
-                placeholder={t.resubmitNote}
-              />
-              <button
-                onClick={doResubmit}
-                disabled={isPending || !resubmitNote.trim()}
-                className="btn-primary text-sm disabled:opacity-50"
-              >
-                {isPending ? '...' : t.resubmitBtn}
-              </button>
-            </div>
-          )}
-
-          {/* Complete panel (for admins after approval) */}
-          {canComplete && !lifecycleDone && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-6">
-              <h3 className="font-semibold text-emerald-900 mb-2">
-                {lang === 'ar' ? 'تأكيد إتمام التنفيذ' : 'Confirm Completion'}
-              </h3>
-              {showCompleteForm ? (
-                <>
-                  <textarea
-                    value={completeNote}
-                    onChange={e => setCompleteNote(e.target.value)}
-                    rows={2}
-                    className="input-field mb-3"
-                    placeholder={t.completeNote}
-                  />
-                  <div className="flex gap-2">
-                    <button onClick={doComplete} disabled={isPending} className="btn-primary text-sm disabled:opacity-50">
-                      {isPending ? '...' : t.completeBtn}
-                    </button>
-                    <button onClick={() => setShowCompleteForm(false)} className="px-4 py-2 text-sm text-slate-600 hover:bg-white rounded-xl border">
-                      {lang === 'ar' ? 'إلغاء' : 'Cancel'}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <button onClick={() => setShowCompleteForm(true)} className="btn-primary text-sm">
-                  {t.completeBtn}
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Timeline */}
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
-            <h3 className="font-semibold text-slate-900 mb-4">{t.actionLog}</h3>
-            {visibleActions.length === 0 ? (
-              <p className="text-sm text-slate-400">{t.noActions}</p>
-            ) : (
-              <div className="space-y-4">
-                {visibleActions.map((action: any, i: number) => {
-                  const actorName = lang === 'ar'
-                    ? (action.actor?.full_name_ar || action.actor?.full_name_en || t.system)
-                    : (action.actor?.full_name_en || action.actor?.full_name_ar || t.system);
-                  const actionLabel = actionLabels[action.action]?.[lang] ?? action.action;
-                  return (
-                    <div key={action.id} className="flex gap-3">
-                      <div className="flex flex-col items-center">
-                        <div className={`w-3 h-3 rounded-full mt-1.5 ${
-                          action.action === 'approved'   ? 'bg-emerald-500' :
-                          action.action === 'rejected'   ? 'bg-red-500' :
-                          action.action === 'sent_back'  ? 'bg-amber-500' :
-                          action.action === 'completed'  ? 'bg-emerald-600' :
-                          action.action === 'forwarded'  ? 'bg-blue-500' :
-                          action.action === 'cancelled'  ? 'bg-slate-400' : 'bg-blue-500'
-                        }`} />
-                        {i < visibleActions.length - 1 && <div className="w-px flex-1 bg-slate-200 my-1" />}
-                      </div>
-                      <div className="pb-4">
-                        <p className="text-sm font-medium text-slate-900">
-                          {actorName} — <span className="text-slate-500">{actionLabel}</span>
-                        </p>
-                        {action.rationale && <p className="text-sm text-slate-600 mt-1">{action.rationale}</p>}
-                        {action.note      && <p className="text-sm text-slate-600 mt-1">{action.note}</p>}
-                        <p className="text-xs text-slate-400 mt-1">{formatDateTime(action.created_at, lang)}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Sidebar */}
-        <div className="space-y-5">
-          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-            <h3 className="font-semibold text-slate-900 mb-3 text-sm">{t.requestInfo}</h3>
-            <dl className="space-y-3 text-sm">
+          {/* 2. Info grid */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">
+              {isAr ? 'تفاصيل الطلب' : 'Request Details'}
+            </h2>
+            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
               <div>
-                <dt className="text-slate-500">{t.requester}</dt>
-                <dd className="font-medium">{requesterName}</dd>
+                <dt className="text-slate-500 mb-0.5">{isAr ? 'مقدم الطلب' : 'Requester'}</dt>
+                <dd className="font-medium text-slate-800">{personName(requesterName)}</dd>
               </div>
               <div>
-                <dt className="text-slate-500">{t.company}</dt>
-                <dd>{lang === 'ar' ? request.origin_company?.name_ar : (request.origin_company?.name_en || request.origin_company?.name_ar)}</dd>
+                <dt className="text-slate-500 mb-0.5">{isAr ? 'من قسم' : 'From Dept'}</dt>
+                <dd className="font-medium text-slate-800">
+                  {originDept ? (isAr ? originDept.name_ar : originDept.name_en) || '—' : '—'}
+                </dd>
               </div>
               <div>
-                <dt className="text-slate-500">{t.dept}</dt>
-                <dd>{lang === 'ar' ? (request.origin_dept?.name_ar || '—') : (request.origin_dept?.name_en || request.origin_dept?.name_ar || '—')}</dd>
+                <dt className="text-slate-500 mb-0.5">{isAr ? 'من شركة' : 'From Company'}</dt>
+                <dd className="font-medium text-slate-800">
+                  {originCompany ? (isAr ? originCompany.name_ar : originCompany.name_en) || '—' : '—'}
+                </dd>
               </div>
-              {request.destination_company && (
-                <div>
-                  <dt className="text-slate-500">{t.destination}</dt>
-                  <dd>{lang === 'ar' ? request.destination_company.name_ar : (request.destination_company.name_en || request.destination_company.name_ar)}</dd>
-                </div>
-              )}
-              {request.destination_dept && (
-                <div>
-                  <dt className="text-slate-500">{t.destDept}</dt>
-                  <dd>{lang === 'ar' ? request.destination_dept.name_ar : (request.destination_dept.name_en || request.destination_dept.name_ar)}</dd>
-                </div>
-              )}
               <div>
-                <dt className="text-slate-500">{t.created}</dt>
-                <dd>{formatDateTime(request.created_at, lang)}</dd>
+                <dt className="text-slate-500 mb-0.5">{isAr ? 'إلى قسم' : 'To Dept'}</dt>
+                <dd className="font-medium text-slate-800">
+                  {destDept ? (isAr ? destDept.name_ar : destDept.name_en) || '—' : '—'}
+                </dd>
               </div>
-              {request.submitted_at && (
+              <div>
+                <dt className="text-slate-500 mb-0.5">{isAr ? 'إلى شركة' : 'To Company'}</dt>
+                <dd className="font-medium text-slate-800">
+                  {destCompany ? (isAr ? destCompany.name_ar : destCompany.name_en) || '—' : '—'}
+                </dd>
+              </div>
+              {request.amount != null && (
                 <div>
-                  <dt className="text-slate-500">{t.submitted}</dt>
-                  <dd>{formatDateTime(request.submitted_at, lang)}</dd>
-                </div>
-              )}
-              {assignedEmployee && (
-                <div>
-                  <dt className="text-slate-500">{lang === 'ar' ? 'المُسند إليه' : 'Assigned To'}</dt>
-                  <dd className="font-medium">
-                    {lang === 'ar' ? assignedEmployee.full_name_ar : (assignedEmployee.full_name_en || assignedEmployee.full_name_ar)}
-                    <span className="text-xs text-slate-400 ms-1">({assignedEmployee.employee_code})</span>
+                  <dt className="text-slate-500 mb-0.5">{isAr ? 'المبلغ' : 'Amount'}</dt>
+                  <dd className="font-medium text-slate-800">
+                    {Number(request.amount).toLocaleString()} {request.currency || ''}
                   </dd>
                 </div>
               )}
-              {request.execution_started_at && (
+              {request.payee && (
                 <div>
-                  <dt className="text-slate-500">{lang === 'ar' ? 'بدأ التنفيذ' : 'Execution Started'}</dt>
-                  <dd>{formatDateTime(request.execution_started_at, lang)}</dd>
+                  <dt className="text-slate-500 mb-0.5">{isAr ? 'المستفيد' : 'Payee'}</dt>
+                  <dd className="font-medium text-slate-800">{request.payee}</dd>
+                </div>
+              )}
+              {request.leave_type && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">{isAr ? 'نوع الإجازة' : 'Leave Type'}</dt>
+                  <dd className="font-medium text-slate-800">{request.leave_type}</dd>
+                </div>
+              )}
+              {request.leave_start_date && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">{isAr ? 'من تاريخ' : 'From Date'}</dt>
+                  <dd className="font-medium text-slate-800">{request.leave_start_date}</dd>
+                </div>
+              )}
+              {request.leave_end_date && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">{isAr ? 'إلى تاريخ' : 'To Date'}</dt>
+                  <dd className="font-medium text-slate-800">{request.leave_end_date}</dd>
+                </div>
+              )}
+              {request.created_at && (
+                <div>
+                  <dt className="text-slate-500 mb-0.5">{isAr ? 'تاريخ الإنشاء' : 'Created'}</dt>
+                  <dd className="font-medium text-slate-800">{formatDate(request.created_at, isAr)}</dd>
                 </div>
               )}
             </dl>
           </div>
 
-          {/* Approval chain */}
-          {approvalSteps.length > 0 && (
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-              <h3 className="font-semibold text-slate-900 mb-3 text-sm">{t.approvalChain}</h3>
-              <div className="space-y-3">
-                {approvalSteps.map((step: any) => {
-                  const approverName = lang === 'ar'
-                    ? (step.approver?.full_name_ar || step.approver?.full_name_en || '—')
-                    : (step.approver?.full_name_en || step.approver?.full_name_ar || '—');
-                  return (
-                    <div key={step.id} className="flex items-center gap-3">
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs ${
-                        step.status === 'approved' ? 'bg-emerald-100 text-emerald-700' :
-                        step.status === 'rejected' ? 'bg-red-100 text-red-700' :
-                        step.status === 'pending'  ? 'bg-amber-100 text-amber-700' :
-                        'bg-slate-100 text-slate-500'
-                      }`}>
-                        {step.status === 'approved' ? '✓' : step.status === 'rejected' ? '✗' : step.step_order}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium">{approverName}</p>
-                        <p className="text-xs text-slate-500">{step.approver_role}</p>
-                        {step.delegateOf && (
-                          <p className="text-xs text-blue-500">
-                            {lang === 'ar' ? `نيابةً عن: ${step.delegateOf?.full_name_ar}` : `Acting for: ${step.delegateOf?.full_name_en || step.delegateOf?.full_name_ar}`}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+          {/* 3. Description */}
+          {request.description && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+              <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">
+                {isAr ? 'الوصف' : 'Description'}
+              </h2>
+              <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">{request.description}</p>
             </div>
           )}
 
-          {/* Requester lifecycle actions */}
-          {canCancel && !lifecycleDone && (
-            <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
-              <button
-                onClick={doCancel}
-                disabled={isPending}
-                className="w-full px-4 py-2.5 rounded-xl text-sm font-medium text-red-600 border border-red-200 hover:bg-red-50 transition-colors disabled:opacity-50"
-              >
-                {isPending ? '...' : t.cancelBtn}
-              </button>
+          {/* 4. Onboarding: Employee info + task tracker */}
+          {isOnboardingParent && request.metadata && (
+            <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm p-6">
+              <h2 className="text-sm font-semibold text-indigo-600 uppercase tracking-wide mb-4">
+                🧑‍💼 {isAr ? 'بيانات الموظف الجديد' : 'New Employee Details'}
+              </h2>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
+                {(request.metadata as any).emp_name_ar && (
+                  <div>
+                    <dt className="text-slate-500 mb-0.5">{isAr ? 'الاسم (عربي)' : 'Name (Arabic)'}</dt>
+                    <dd className="font-medium text-slate-800">{(request.metadata as any).emp_name_ar}</dd>
+                  </div>
+                )}
+                {(request.metadata as any).emp_name_en && (
+                  <div>
+                    <dt className="text-slate-500 mb-0.5">{isAr ? 'الاسم (إنجليزي)' : 'Name (English)'}</dt>
+                    <dd className="font-medium text-slate-800">{(request.metadata as any).emp_name_en}</dd>
+                  </div>
+                )}
+                {(request.metadata as any).national_id && (
+                  <div>
+                    <dt className="text-slate-500 mb-0.5">{isAr ? 'رقم الهوية' : 'National ID'}</dt>
+                    <dd className="font-medium text-slate-800">{(request.metadata as any).national_id}</dd>
+                  </div>
+                )}
+                {(request.metadata as any).dob && (
+                  <div>
+                    <dt className="text-slate-500 mb-0.5">{isAr ? 'تاريخ الميلاد' : 'Date of Birth'}</dt>
+                    <dd className="font-medium text-slate-800">{(request.metadata as any).dob}</dd>
+                  </div>
+                )}
+                {(request.metadata as any).job_title_ar && (
+                  <div>
+                    <dt className="text-slate-500 mb-0.5">{isAr ? 'المسمى الوظيفي' : 'Job Title'}</dt>
+                    <dd className="font-medium text-slate-800">{(request.metadata as any).job_title_ar}</dd>
+                  </div>
+                )}
+                {(request.metadata as any).salary && (
+                  <div>
+                    <dt className="text-slate-500 mb-0.5">{isAr ? 'الراتب الأساسي' : 'Basic Salary'}</dt>
+                    <dd className="font-medium text-slate-800">{Number((request.metadata as any).salary).toLocaleString()} SAR</dd>
+                  </div>
+                )}
+                {(request.metadata as any).start_date && (
+                  <div>
+                    <dt className="text-slate-500 mb-0.5">{isAr ? 'تاريخ الانضمام' : 'Start Date'}</dt>
+                    <dd className="font-medium text-slate-800">{(request.metadata as any).start_date}</dd>
+                  </div>
+                )}
+                {(request.metadata as any).branch && (
+                  <div>
+                    <dt className="text-slate-500 mb-0.5">{isAr ? 'الفرع' : 'Branch'}</dt>
+                    <dd className="font-medium text-slate-800">{(request.metadata as any).branch}</dd>
+                  </div>
+                )}
+                {(request.metadata as any).direct_manager && (
+                  <div>
+                    <dt className="text-slate-500 mb-0.5">{isAr ? 'المدير المباشر' : 'Direct Manager'}</dt>
+                    <dd className="font-medium text-slate-800">{(request.metadata as any).direct_manager}</dd>
+                  </div>
+                )}
+              </dl>
             </div>
           )}
+
+          {/* Task tracker */}
+          {isOnboardingParent && childRequests.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+              <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">
+                {isAr ? 'مهام التعيين' : 'Onboarding Tasks'}
+              </h2>
+              <ul className="flex flex-col gap-3">
+                {childRequests.map((child: any) => {
+                  const taskLabel = child.task_type ? TASK_LABELS[child.task_type] : null;
+                  const assignee = child.assigned_to ? childAssigneeMap[child.assigned_to] : null;
+                  const statusColor =
+                    child.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
+                    child.status === 'cancelled' ? 'bg-slate-100 text-slate-500' :
+                    child.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+                    'bg-amber-100 text-amber-700';
+                  const statusLabel =
+                    child.status === 'completed' ? (isAr ? 'مكتمل' : 'Done') :
+                    child.status === 'cancelled' ? (isAr ? 'ملغي' : 'Cancelled') :
+                    child.status === 'in_progress' ? (isAr ? 'جارٍ' : 'In Progress') :
+                    (isAr ? 'انتظار' : 'Pending');
+                  return (
+                    <li key={child.id} className="flex items-center gap-3 text-sm">
+                      <span className="text-xl shrink-0">
+                        {taskLabel?.icon || '📋'}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <a
+                          href={`/dashboard/requests/${child.id}`}
+                          className="font-medium text-slate-800 hover:text-blue-600 transition-colors"
+                        >
+                          {taskLabel ? (isAr ? taskLabel.ar : taskLabel.en) : child.task_type}
+                        </a>
+                        {assignee && (
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            {isAr ? 'المسؤول: ' : 'Assigned: '}
+                            {isAr ? assignee.full_name_ar : (assignee.full_name_en || assignee.full_name_ar)}
+                          </p>
+                        )}
+                      </div>
+                      <span className={`text-xs font-semibold px-2 py-1 rounded-full shrink-0 ${statusColor}`}>
+                        {statusLabel}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              {/* Cancel onboarding button */}
+              {['in_progress', 'draft'].includes(request.status) && currentEmployeeId === requesterId && (
+                <div className="mt-5 pt-4 border-t border-slate-100">
+                  {!showCancelModal ? (
+                    <button
+                      onClick={() => setShowCancelModal(true)}
+                      className="px-4 py-2 text-sm font-medium text-red-600 border border-red-200 rounded-xl hover:bg-red-50 transition-colors"
+                    >
+                      🚫 {isAr ? 'إلغاء طلب التعيين' : 'Cancel Onboarding'}
+                    </button>
+                  ) : (
+                    <div className="space-y-3">
+                      <textarea
+                        value={cancelNote}
+                        onChange={e => setCancelNote(e.target.value)}
+                        rows={2}
+                        placeholder={isAr ? 'سبب الإلغاء *' : 'Cancellation reason *'}
+                        className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none"
+                      />
+                      {cancelError && <p className="text-red-600 text-xs">{cancelError}</p>}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            if (!cancelNote.trim()) { setCancelError(isAr ? 'السبب مطلوب' : 'Reason required'); return; }
+                            setCancelError('');
+                            startCancelTransition(async () => {
+                              const result = await cancelOnboarding(request.id, cancelNote);
+                              if (result.error) { setCancelError(result.error); } else { router.push('/dashboard/requests'); }
+                            });
+                          }}
+                          disabled={cancelPending}
+                          className="px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-xl hover:bg-red-700 disabled:opacity-50 transition-colors"
+                        >
+                          {isAr ? 'تأكيد الإلغاء' : 'Confirm Cancel'}
+                        </button>
+                        <button onClick={() => { setShowCancelModal(false); setCancelNote(''); setCancelError(''); }}
+                          className="px-4 py-2 text-sm font-medium border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
+                          {isAr ? 'تراجع' : 'Back'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 4b. Type-specific info */}
+          {request.request_type === 'fund_disbursement' && (request.amount != null || request.payee || request.cost_center) && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+              <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">
+                {isAr ? 'تفاصيل الصرف المالي' : 'Payment Details'}
+              </h2>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
+                {request.amount != null && (
+                  <div>
+                    <dt className="text-slate-500 mb-0.5">{isAr ? 'المبلغ' : 'Amount'}</dt>
+                    <dd className="font-medium text-slate-800 text-lg">{Number(request.amount).toLocaleString()} {request.currency || ''}</dd>
+                  </div>
+                )}
+                {request.payee && (
+                  <div>
+                    <dt className="text-slate-500 mb-0.5">{isAr ? 'المستفيد' : 'Payee'}</dt>
+                    <dd className="font-medium text-slate-800">{request.payee}</dd>
+                  </div>
+                )}
+                {request.cost_center && (
+                  <div>
+                    <dt className="text-slate-500 mb-0.5">{isAr ? 'مركز التكلفة' : 'Cost Center'}</dt>
+                    <dd className="font-medium text-slate-800">{request.cost_center}</dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          )}
+          {request.request_type === 'leave_approval' && request.leave_type && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+              <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">
+                {isAr ? 'تفاصيل الإجازة' : 'Leave Details'}
+              </h2>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
+                <div>
+                  <dt className="text-slate-500 mb-0.5">{isAr ? 'نوع الإجازة' : 'Leave Type'}</dt>
+                  <dd className="font-medium text-slate-800">{request.leave_type}</dd>
+                </div>
+                {request.leave_start_date && (
+                  <div>
+                    <dt className="text-slate-500 mb-0.5">{isAr ? 'من تاريخ' : 'Start Date'}</dt>
+                    <dd className="font-medium text-slate-800">{request.leave_start_date}</dd>
+                  </div>
+                )}
+                {request.leave_end_date && (
+                  <div>
+                    <dt className="text-slate-500 mb-0.5">{isAr ? 'إلى تاريخ' : 'End Date'}</dt>
+                    <dd className="font-medium text-slate-800">{request.leave_end_date}</dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          )}
+          {!isOnboardingParent && !isOnboardingChild && request.metadata && Object.keys(request.metadata).length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+              <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">
+                {isAr ? 'بيانات إضافية' : 'Additional Details'}
+              </h2>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
+                {Object.entries(request.metadata as Record<string, string>).map(([k, v]) => (
+                  <div key={k}>
+                    <dt className="text-slate-500 mb-0.5 capitalize">{k.replace(/_/g, ' ')}</dt>
+                    <dd className="font-medium text-slate-800">{String(v)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          )}
+
+          {/* 6. Evidence */}
+          {evidence.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+              <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">
+                {isAr ? 'المستندات المرفقة' : 'Attached Documents'}
+              </h2>
+              <ul className="flex flex-col gap-3">
+                {evidence.map((e: any) => {
+                  const sizeKB = e.file_size_bytes ? Math.ceil(e.file_size_bytes / 1024) : null;
+                  return (
+                    <li key={e.id} className="flex items-start gap-3 text-sm">
+                      <span className="text-lg mt-0.5">📎</span>
+                      <div className="flex-1 min-w-0">
+                        <a
+                          href={e.file_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-medium text-indigo-600 hover:underline break-all"
+                        >
+                          {e.file_name}
+                        </a>
+                        <div className="text-slate-400 text-xs mt-0.5 flex flex-wrap gap-2">
+                          {sizeKB !== null && <span>{sizeKB} KB</span>}
+                          {e.uploader && <span>{personName(e.uploader)}</span>}
+                          {e.created_at && <span>{formatDate(e.created_at, isAr)}</span>}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
+          {/* 7. Actions */}
+          {!isOnboardingParent && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+              <RequestActions
+                requestId={request.id}
+                requestStatus={request.status}
+                assignedTo={request.assigned_to}
+                currentEmployeeId={currentEmployeeId}
+                requesterId={requesterId}
+                originCompanyId={request.origin_company_id}
+                destinationDeptId={request.destination_dept_id}
+                isDeptHead={isDeptHead}
+                isOriginCompanyCEO={isOriginCompanyCEO}
+                isHoldingCEO={isHoldingCEO}
+                isFinanceHead={isFinanceHead}
+                isHRHead={isHRHead}
+                requiresCeo={request.requires_ceo}
+                requiresHr={request.requires_hr}
+                requiresFinance={request.requires_finance}
+                ceoStampedAt={request.ceo_stamped_at}
+                hrStampedAt={request.hr_stamped_at}
+                financeStampedAt={request.finance_stamped_at}
+                companyExitStampedAt={request.company_exit_stamped_at}
+                companies={allCompanies}
+                departments={allDepartments}
+                isOnboardingChild={isOnboardingChild}
+                dependsOnStatus={dependsOnStatus}
+              />
+            </div>
+          )}
+
+        </div>
+
+        {/* ════════════ RIGHT COLUMN ════════════ */}
+        <div className="lg:col-span-1 flex flex-col gap-6">
+
+          {/* 1. Status card */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">
+              {isAr ? 'الحالة' : 'Status'}
+            </h2>
+            <div className={`inline-flex px-4 py-2 rounded-full text-sm font-bold mb-5 ${STATUS_COLORS[request.status] ?? 'bg-gray-100 text-gray-600'}`}>
+              {statusLabel(request.status)}
+            </div>
+
+            <div className="text-sm text-slate-500 mb-1">
+              {isAr ? 'المسؤول الحالي' : 'Currently With'}
+            </div>
+            <div className="font-semibold text-slate-800 mb-4">
+              {personName(assignedName)}
+            </div>
+
+            {request.submitted_at && (
+              <>
+                <div className="text-sm text-slate-500 mb-1">
+                  {isAr ? 'تاريخ التقديم' : 'Submitted At'}
+                </div>
+                <div className="text-sm font-medium text-slate-700">
+                  {formatDate(request.submitted_at, isAr)}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* 2. Gate badges */}
+          {showGates && gates.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+              <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">
+                {isAr ? 'البوابات المطلوبة' : 'Required Gates'}
+              </h2>
+              <ul className="flex flex-col gap-3">
+                {gates.map(g => (
+                  <li key={g.key} className="flex items-center justify-between text-sm">
+                    <span className="font-medium text-slate-700">
+                      {isAr ? g.labelAr : g.labelEn}
+                    </span>
+                    <span className={`text-xs font-semibold px-2 py-1 rounded-full ${g.stamped ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                      {g.stamped
+                        ? (isAr ? '✅ تمت' : '✅ Done')
+                        : (isAr ? '⏳ مطلوبة' : '⏳ Required')}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* 3. Duration card */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">
+              {isAr ? 'مدة المعالجة' : 'Processing Time'}
+            </h2>
+            {durationEl}
+          </div>
+
+          {/* 4. Timeline */}
+          {reversedActions.length > 0 && (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+              <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">
+                {isAr ? 'سجل الإجراءات' : 'Activity Timeline'}
+              </h2>
+              <ol className="flex flex-col gap-5">
+                {reversedActions.map((a: any, idx: number) => {
+                  // "after X" = time between this action and the previous one in the original (ascending) order.
+                  // reversedActions[idx] is actions[actions.length - 1 - idx]
+                  // Previous action in original order = actions[actions.length - 1 - idx - 1]
+                  const originalIdx = actions.length - 1 - idx;
+                  const prevAction  = originalIdx > 0 ? actions[originalIdx - 1] : null;
+                  const afterMs     = prevAction ? new Date(a.created_at).getTime() - new Date(prevAction.created_at).getTime() : null;
+
+                  return (
+                    <li key={a.id} className="flex gap-3 text-sm">
+                      <span className="text-base mt-0.5 shrink-0">{getActionIcon(a.action)}</span>
+                      <div className="flex-1 min-w-0">
+                        {/* Action label */}
+                        <div className="font-semibold text-slate-800">{actionLabel(a.action)}</div>
+
+                        {/* Actor */}
+                        {a.actor && (
+                          <div className="text-slate-500 text-xs mt-0.5">
+                            {isAr ? 'بواسطة' : 'By'}: {personName(a.actor)}
+                          </div>
+                        )}
+
+                        {/* Forwarded from → to */}
+                        {a.from_person && a.to_person && (
+                          <div className="text-slate-500 text-xs mt-0.5">
+                            {isAr
+                              ? `من ${personName(a.from_person)} ← إلى ${personName(a.to_person)}`
+                              : `${personName(a.from_person)} → ${personName(a.to_person)}`}
+                          </div>
+                        )}
+
+                        {/* Note */}
+                        {a.note && (
+                          <div className="mt-1.5 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-700 text-xs leading-relaxed">
+                            {a.note}
+                          </div>
+                        )}
+
+                        {/* Timestamp */}
+                        {a.created_at && (
+                          <div className="text-slate-400 text-xs mt-1">
+                            {formatDate(a.created_at, isAr)}
+                          </div>
+                        )}
+
+                        {/* Time since previous action */}
+                        {afterMs !== null && afterMs > 0 && (
+                          <div className="text-slate-300 text-xs mt-0.5">
+                            {isAr ? `بعد ${formatDuration(afterMs, true)}` : `after ${formatDuration(afterMs, false)}`}
+                          </div>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+          )}
+
         </div>
       </div>
     </div>

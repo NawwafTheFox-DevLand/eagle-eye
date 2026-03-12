@@ -1,123 +1,135 @@
 'use client';
 import { useState } from 'react';
-import { createBrowserClient } from '@supabase/ssr';
-
-const supabase = createBrowserClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
-const translations = {
-  ar: {
-    title: 'عين النسر', subtitle: 'Eagle Eye', company: 'منصور القابضة',
-    tagline: 'منصة الطلبات الداخلية وسير العمل',
-    email: 'البريد الإلكتروني', password: 'كلمة المرور',
-    signin: 'تسجيل الدخول', loading: 'جاري التحقق...',
-    error_invalid: 'البريد الإلكتروني أو كلمة المرور غير صحيحة',
-    confidential: 'منصة داخلية سرية — للموظفين المعتمدين فقط',
-  },
-  en: {
-    title: 'Eagle Eye', subtitle: 'عين النسر', company: 'Mansour Holding',
-    tagline: 'Internal Workflow & Request Platform',
-    email: 'Email address', password: 'Password',
-    signin: 'Sign in', loading: 'Verifying...',
-    error_invalid: 'Invalid email or password',
-    confidential: 'Confidential internal platform — authorized personnel only',
-  },
-};
+import { createClient } from '@/lib/supabase/client';
+import { useLanguage } from '@/lib/i18n/LanguageContext';
+import Image from 'next/image';
 
 export default function LoginPage() {
+  const { lang, toggle } = useLanguage();
+  const isAr = lang === 'ar';
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lang, setLang] = useState<'ar' | 'en'>('ar');
-  const t = translations[lang];
-  const dir = lang === 'ar' ? 'rtl' : 'ltr';
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
+    setError('');
     setLoading(true);
-    setError(null);
-    
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
-    
-    if (authError) {
-      setError(t.error_invalid);
+    try {
+      const supabase = createClient();
+      const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      if (authError) {
+        setError(isAr ? 'البريد الإلكتروني أو كلمة المرور غير صحيحة' : 'Invalid email or password');
+      } else {
+        window.location.href = '/dashboard';
+      }
+    } finally {
       setLoading(false);
-      return;
     }
-    
-    // Hard navigate so middleware picks up the new cookies
-    window.location.href = '/dashboard';
   }
 
   return (
-    <div className="min-h-screen flex" dir={dir}>
-      <div className="hidden lg:flex lg:w-[55%] relative eagle-gradient overflow-hidden">
-        <div className="absolute inset-0" style={{ backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.02) 0, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 40px)' }} />
-        <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full bg-white/5 blur-3xl" />
-        <div className="absolute -bottom-32 -left-32 w-96 h-96 rounded-full bg-gold-400/10 blur-3xl" />
-        <div className="relative flex flex-col items-center justify-center w-full px-16 text-white">
-          <div className="mb-8 animate-float">
-            <img src="/logo.png" alt="Eagle Eye" className="w-20 h-20 rounded-2xl shadow-2xl object-contain" />
+    <div className="min-h-screen flex">
+      {/* Left branding panel */}
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 flex-col items-center justify-center p-12 relative overflow-hidden">
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute top-20 left-20 w-64 h-64 bg-blue-400 rounded-full blur-3xl" />
+          <div className="absolute bottom-20 right-20 w-48 h-48 bg-blue-300 rounded-full blur-3xl" />
+        </div>
+        <div className="relative z-10 text-center">
+          <div className="w-32 h-32 mx-auto mb-8 flex items-center justify-center">
+            <Image src="/logo.png" alt="Eagle Eye" width={128} height={128} className="object-contain" />
           </div>
-          <h1 className="text-5xl font-bold mb-2 tracking-wide">عين النسر</h1>
-          <p className="text-xl font-light text-white/80 mb-1 tracking-wider">EAGLE EYE</p>
-          <div className="w-16 h-0.5 bg-gradient-to-r from-transparent via-gold-400 to-transparent my-6" />
-          <p className="text-lg font-medium text-white/90 mb-2">منصور القابضة</p>
-          <p className="text-sm text-white/60">Mansour Holding</p>
-          <div className="mt-12 text-center max-w-md">
-            <p className="text-white/50 text-sm leading-relaxed">{t.tagline}</p>
-          </div>
-          <div className="absolute bottom-8 flex items-center gap-3 text-white/30 text-xs">
-            <div className="w-2 h-2 rounded-full bg-emerald-400/60" />
-            <span>نظام آمن ومشفر</span><span className="mx-2">•</span><span>Encrypted &amp; Secure</span>
-          </div>
+          <h1 className="text-4xl font-bold text-white mb-3">
+            {isAr ? 'عين النسر' : 'Eagle Eye'}
+          </h1>
+          <p className="text-blue-200 text-lg mb-2">Eagle Eye Platform</p>
+          <p className="text-slate-400 text-sm max-w-xs mx-auto">
+            {isAr
+              ? 'منصة متكاملة لإدارة الطلبات والعلاقات الحكومية'
+              : 'Integrated platform for request management and government relations'}
+          </p>
+        </div>
+        <div className="absolute bottom-8 text-slate-500 text-xs">
+          © 2026 Eagle Eye. All rights reserved.
         </div>
       </div>
-      <div className="flex-1 flex items-center justify-center bg-slate-50 px-6 relative">
-        <button onClick={() => setLang(l => l === 'ar' ? 'en' : 'ar')}
-          className="absolute top-6 end-6 text-xs text-slate-500 hover:text-eagle-600 transition-colors px-4 py-2 rounded-full border border-slate-200 hover:border-eagle-300 bg-white shadow-sm">
-          {lang === 'ar' ? 'English' : 'العربية'}
-        </button>
+
+      {/* Right form panel */}
+      <div className="flex-1 flex flex-col items-center justify-center p-6 sm:p-12 bg-slate-50">
         <div className="w-full max-w-md">
-          <div className="lg:hidden flex flex-col items-center mb-10">
-            <img src="/logo.png" alt="Eagle Eye" className="w-9 h-9 rounded-xl shadow-sm object-contain mb-4" />
-            <h2 className="text-2xl font-bold text-eagle-800">{t.title}</h2>
-            <p className="text-sm text-slate-500">{t.company}</p>
+          {/* Mobile logo */}
+          <div className="lg:hidden text-center mb-8">
+            <Image src="/logo.png" alt="Eagle Eye" width={64} height={64} className="mx-auto mb-3 object-contain" />
+            <h1 className="text-2xl font-bold text-slate-900">{isAr ? 'عين النسر' : 'Eagle Eye'}</h1>
           </div>
-          <div className="mb-8">
-            <h2 className="text-2xl font-bold text-slate-900 mb-2">{t.signin}</h2>
-            <p className="text-sm text-slate-500">{t.confidential}</p>
-          </div>
-          {error && (
-            <div className="mb-6 px-4 py-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-center gap-2 animate-slide-up">
-              <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              {error}
-            </div>
-          )}
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">{t.email}</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} required className="input-field" placeholder="name@company.com" dir="ltr" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">{t.password}</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} required className="input-field" dir="ltr" />
-            </div>
-            <button type="submit" disabled={loading} className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed text-base">
-              {loading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>
-                  {t.loading}
-                </span>
-              ) : t.signin}
+
+          {/* Language toggle */}
+          <div className="flex justify-end mb-6">
+            <button
+              onClick={toggle}
+              className="text-sm text-slate-500 hover:text-blue-600 border border-slate-200 rounded-full px-4 py-1.5 hover:border-blue-300 transition-colors bg-white"
+            >
+              {isAr ? 'English' : 'العربية'}
             </button>
-          </form>
-          <div className="mt-10 text-center">
-            <p className="text-xs text-slate-400">© 2026 Mansour Holding — منصور القابضة</p>
-            <p className="text-xs text-slate-300 mt-1">Eagle Eye v1.0</p>
+          </div>
+
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8">
+            <h2 className="text-2xl font-bold text-slate-900 mb-2">
+              {isAr ? 'تسجيل الدخول' : 'Sign In'}
+            </h2>
+            <p className="text-slate-500 text-sm mb-8">
+              {isAr ? 'أدخل بيانات حسابك للمتابعة' : 'Enter your credentials to continue'}
+            </p>
+
+            <form onSubmit={handleLogin} className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  {isAr ? 'البريد الإلكتروني' : 'Email'}
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder={isAr ? 'example@company.com' : 'example@company.com'}
+                  required
+                  className="input-field"
+                  dir="ltr"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  {isAr ? 'كلمة المرور' : 'Password'}
+                </label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  className="input-field"
+                  dir="ltr"
+                />
+              </div>
+
+              {error && (
+                <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3 text-sm text-red-700">
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-primary w-full text-center"
+              >
+                {loading
+                  ? (isAr ? 'جارٍ الدخول...' : 'Signing in...')
+                  : (isAr ? 'تسجيل الدخول' : 'Sign In')}
+              </button>
+            </form>
           </div>
         </div>
       </div>

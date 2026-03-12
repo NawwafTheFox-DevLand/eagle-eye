@@ -1,27 +1,31 @@
-import { createServiceClient } from '@/lib/supabase/server';
-import { getSessionEmployee } from '@/app/actions/requests';
 import { redirect } from 'next/navigation';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import SLAClient from './SLAClient';
 
-export default async function SLAPage() {
-  const [service, employee] = await Promise.all([createServiceClient(), getSessionEmployee()]);
-  if (!employee) redirect('/login');
+export const dynamic = 'force-dynamic';
 
-  const roles = employee.roles?.map((r: any) => r.role) || [];
-  const isAdmin = roles.some((r: string) => ['super_admin', 'ceo'].includes(r));
-  if (!isAdmin) redirect('/dashboard');
-  const isSuperAdmin = roles.includes('super_admin');
+export default async function AdminSLAPage() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
 
-  const [{ data: configs }, { data: requests }] = await Promise.all([
-    service.from('request_type_configs')
-      .select('request_type, name_ar, name_en, default_sla_target_hours, default_sla_max_hours, is_active')
-      .order('name_ar'),
-    service.from('requests')
-      .select('id, request_type, status, sla_breached, sla_target_at, sla_max_at, submitted_at, completed_at, created_at')
-      .not('status', 'in', '("draft","cancelled")')
-      .order('created_at', { ascending: false })
-      .limit(200),
-  ]);
+  const service = await createServiceClient();
 
-  return <SLAClient configs={configs || []} requests={requests || []} isSuperAdmin={isSuperAdmin} />;
+  const { data: me } = await service.from('employees').select('id').eq('auth_user_id', user.id).single();
+  if (!me) redirect('/login');
+
+  const { data: roleRows } = await service.from('user_roles').select('role')
+    .eq('employee_id', me.id).eq('is_active', true);
+  if (!(roleRows || []).some((r: any) => r.role === 'super_admin')) redirect('/dashboard');
+
+  let configs: any[] = [];
+  try {
+    const { data } = await service.from('sla_configs')
+      .select('request_type, target_hours, max_hours').order('request_type');
+    configs = data || [];
+  } catch {
+    // table may not exist
+  }
+
+  return <SLAClient configs={configs} />;
 }

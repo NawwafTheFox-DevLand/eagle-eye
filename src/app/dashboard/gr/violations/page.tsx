@@ -1,9 +1,19 @@
-import { getGRViolations, getGREntities } from '@/app/actions/gr';
-import { getSessionEmployee } from '@/app/actions/requests';
-import ViolationsClient from './ViolationsClient';
+import { redirect } from 'next/navigation';
+import { createClient } from '@/lib/supabase/server';
+import { getGRAccess, getGRViolations } from '@/app/actions/gr';
+import GRViolationsClient from './GRViolationsClient';
+
+export const dynamic = 'force-dynamic';
+
 export default async function GRViolationsPage() {
-  const [violations, entities, employee] = await Promise.all([getGRViolations(), getGREntities(), getSessionEmployee()]);
-  const roles = employee?.roles?.map((r: any) => r.role) || [];
-  const isReadOnly = (roles.includes('super_admin') || roles.includes('ceo')) && !roles.includes('gr_employee') && !roles.includes('gr_manager');
-  return <ViolationsClient violations={violations} entities={entities} isReadOnly={isReadOnly} />;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
+
+  const hasAccess = await getGRAccess();
+  if (!hasAccess) redirect('/dashboard');
+
+  const { data: violations, error } = await getGRViolations();
+
+  return <GRViolationsClient violations={violations} error={error} />;
 }

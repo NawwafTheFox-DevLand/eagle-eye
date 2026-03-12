@@ -1,149 +1,153 @@
 'use client';
-
 import { useState } from 'react';
+import Link from 'next/link';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import { exportToCSV } from '@/lib/utils/export';
 
-const actionColors: Record<string, string> = {
-  submitted:            'bg-blue-50 text-blue-700',
-  approved:             'bg-emerald-50 text-emerald-700',
-  rejected:             'bg-red-50 text-red-700',
-  sent_back:            'bg-amber-50 text-amber-700',
-  completed:            'bg-teal-50 text-teal-700',
-  cancelled:            'bg-slate-100 text-slate-600',
-  resubmitted:          'bg-indigo-50 text-indigo-700',
-  delegated:            'bg-purple-50 text-purple-700',
-  delegated_to_employee:'bg-purple-50 text-purple-700',
+const ACTION_LABELS: Record<string, { ar: string; en: string }> = {
+  submitted:            { ar: 'تم التقديم',             en: 'Submitted'                },
+  forwarded:            { ar: 'تم التحويل',              en: 'Forwarded'                },
+  returned:             { ar: 'تم الإرجاع',              en: 'Returned'                 },
+  asked_requester:      { ar: 'طُلب توضيح',             en: 'Clarification Requested'  },
+  resubmitted:          { ar: 'أُعيد التقديم',           en: 'Resubmitted'              },
+  assigned:             { ar: 'تم التعيين',              en: 'Assigned'                 },
+  company_exit_stamped: { ar: 'موافقة خروج الشركة',     en: 'Company Exit Stamped'     },
+  finance_stamped:      { ar: 'اعتماد مالي',            en: 'Finance Stamped'          },
+  hr_stamped:           { ar: 'موافقة الموارد البشرية', en: 'HR Stamped'               },
+  ceo_stamped:          { ar: 'موافقة الرئيس التنفيذي', en: 'CEO Stamped'              },
+  completed:            { ar: 'تم الإنجاز',              en: 'Completed'                },
+  rejected:             { ar: 'تم الرفض',               en: 'Rejected'                 },
+  cancelled:            { ar: 'تم الإلغاء',              en: 'Cancelled'                },
 };
 
-const actionLabels: Record<string, { ar: string; en: string }> = {
-  submitted:             { ar: 'تم التقديم',         en: 'Submitted' },
-  approved:              { ar: 'موافق عليه',          en: 'Approved' },
-  rejected:              { ar: 'مرفوض',              en: 'Rejected' },
-  sent_back:             { ar: 'أُعيد للمراجعة',      en: 'Sent Back' },
-  completed:             { ar: 'مكتمل',              en: 'Completed' },
-  cancelled:             { ar: 'ملغي',               en: 'Cancelled' },
-  resubmitted:           { ar: 'أُعيد تقديمه',        en: 'Resubmitted' },
-  delegated:             { ar: 'تم التفويض',          en: 'Delegated' },
-  delegated_to_employee: { ar: 'عُيِّن لموظف',        en: 'Assigned to Employee' },
-};
+function actionBadge(action: string) {
+  if (['submitted', 'completed', 'company_exit_stamped', 'finance_stamped', 'hr_stamped', 'ceo_stamped'].includes(action))
+    return 'bg-emerald-100 text-emerald-700';
+  if (['forwarded', 'assigned'].includes(action))
+    return 'bg-blue-100 text-blue-700';
+  if (['returned', 'asked_requester', 'resubmitted'].includes(action))
+    return 'bg-amber-100 text-amber-700';
+  if (['rejected', 'cancelled'].includes(action))
+    return 'bg-red-100 text-red-700';
+  return 'bg-slate-100 text-slate-600';
+}
 
-const filterableActions = ['submitted', 'approved', 'rejected', 'sent_back', 'completed', 'cancelled', 'resubmitted', 'delegated'];
+const ALL_ACTIONS = Object.keys(ACTION_LABELS);
 
-export default function AuditClient({ actions, actors, requests }: any) {
+export default function AuditClient({
+  actions, actorMap, reqMap,
+}: {
+  actions: any[];
+  actorMap: Record<string, any>;
+  reqMap: Record<string, string>;
+}) {
   const { lang } = useLanguage();
-  const [filterAction, setFilterAction] = useState('');
+  const isAr = lang === 'ar';
 
-  const actorMap = new Map(actors.map((a: any) => [a.id, a]));
-  const requestMap = new Map(requests.map((r: any) => [r.id, r]));
+  const [actionFilter, setActionFilter] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
 
-  const filtered = filterAction ? actions.filter((a: any) => a.action === filterAction) : actions;
+  const getName = (id: string | null) => {
+    if (!id) return '—';
+    const e = actorMap[id];
+    return e ? (isAr ? e.full_name_ar : e.full_name_en || e.full_name_ar) : '—';
+  };
 
-  function formatDateTime(iso: string) {
-    const d = new Date(iso);
-    return d.toLocaleString(lang === 'ar' ? 'ar-SA' : 'en-GB', {
-      year: 'numeric', month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    });
+  const filtered = actions.filter(a => {
+    if (actionFilter && a.action !== actionFilter) return false;
+    if (fromDate && a.created_at < fromDate) return false;
+    if (toDate && a.created_at > toDate + 'T23:59:59') return false;
+    return true;
+  });
+
+  const formatDate = (d: string) => new Date(d).toLocaleDateString(isAr ? 'ar-SA' : 'en-US', {
+    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+
+  function handleExport() {
+    exportToCSV(filtered.map(a => ({
+      [isAr ? 'التاريخ' : 'Date']: formatDate(a.created_at),
+      [isAr ? 'الإجراء' : 'Action']: a.action,
+      [isAr ? 'المنفذ' : 'Actor']: getName(a.actor_id),
+      [isAr ? 'الملاحظة' : 'Note']: a.note || '',
+    })), 'audit-log');
   }
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-start justify-between flex-wrap gap-3">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">
-            {lang === 'ar' ? 'سجل التدقيق' : 'Audit Log'}
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            {filtered.length}{lang === 'ar' ? ' إجراء' : ' actions'}
-            {filterAction ? ` / ${actions.length}` : ''}
+          <h1 className="text-2xl font-bold text-slate-900">{isAr ? 'سجل التدقيق' : 'Audit Log'}</h1>
+          <p className="text-slate-500 text-sm mt-1">
+            {isAr ? `${filtered.length} من ${actions.length} إجراء` : `${filtered.length} of ${actions.length} actions`}
           </p>
         </div>
-        <select
-          value={filterAction}
-          onChange={e => setFilterAction(e.target.value)}
-          className="input-field w-52"
-        >
-          <option value="">{lang === 'ar' ? 'جميع الإجراءات' : 'All Actions'}</option>
-          {filterableActions.map(a => (
-            <option key={a} value={a}>{actionLabels[a]?.[lang] ?? a}</option>
-          ))}
-        </select>
+        <button onClick={handleExport} className="text-sm px-3 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors shrink-0">
+          {isAr ? '⬇ تصدير' : '⬇ Export'}
+        </button>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
-                <th className="px-4 py-3 text-start font-medium text-slate-600">
-                  {lang === 'ar' ? 'التاريخ' : 'Date'}
-                </th>
-                <th className="px-4 py-3 text-start font-medium text-slate-600">
-                  {lang === 'ar' ? 'رقم الطلب' : 'Request #'}
-                </th>
-                <th className="px-4 py-3 text-start font-medium text-slate-600">
-                  {lang === 'ar' ? 'الإجراء' : 'Action'}
-                </th>
-                <th className="px-4 py-3 text-start font-medium text-slate-600">
-                  {lang === 'ar' ? 'المنفِّذ' : 'Actor'}
-                </th>
-                <th className="px-4 py-3 text-start font-medium text-slate-600">
-                  {lang === 'ar' ? 'من ← إلى' : 'From → To'}
-                </th>
-                <th className="px-4 py-3 text-start font-medium text-slate-600">
-                  {lang === 'ar' ? 'ملاحظات' : 'Notes'}
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-slate-400">
-                    {lang === 'ar' ? 'لا توجد سجلات' : 'No records found'}
-                  </td>
-                </tr>
-              ) : filtered.map((a: any) => {
-                const actor = actorMap.get(a.actor_id) as any;
-                const req = requestMap.get(a.request_id) as any;
-                const actorName = actor
-                  ? (lang === 'ar' ? actor.full_name_ar : (actor.full_name_en || actor.full_name_ar))
-                  : '—';
-                const actionColor = actionColors[a.action] ?? 'bg-slate-100 text-slate-600';
-                const actionLabel = actionLabels[a.action]?.[lang] ?? a.action;
-                return (
-                  <tr key={a.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
-                      {formatDateTime(a.created_at)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="font-mono text-xs text-slate-700">
-                        {req?.request_number ?? '—'}
-                      </span>
-                      {req?.subject && (
-                        <p className="text-xs text-slate-400 truncate max-w-[180px]">{req.subject}</p>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${actionColor}`}>
-                        {actionLabel}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-700">{actorName}</td>
-                    <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">
-                      {a.from_status && a.to_status
-                        ? `${a.from_status} → ${a.to_status}`
-                        : a.to_status ?? '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-500 max-w-[200px]">
-                      {a.note || a.rationale
-                        ? <span className="line-clamp-2">{a.note || a.rationale}</span>
-                        : <span className="text-slate-300">—</span>}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3">
+        <select value={actionFilter} onChange={e => setActionFilter(e.target.value)} className="input-field w-auto text-sm">
+          <option value="">{isAr ? 'كل الإجراءات' : 'All Actions'}</option>
+          {ALL_ACTIONS.map(a => {
+            const label = ACTION_LABELS[a];
+            return <option key={a} value={a}>{label ? (isAr ? label.ar : label.en) : a}</option>;
+          })}
+        </select>
+        <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
+          className="input-field w-auto text-sm" title={isAr ? 'من تاريخ' : 'From date'} />
+        <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
+          className="input-field w-auto text-sm" title={isAr ? 'إلى تاريخ' : 'To date'} />
+        {(actionFilter || fromDate || toDate) && (
+          <button onClick={() => { setActionFilter(''); setFromDate(''); setToDate(''); }}
+            className="text-sm text-slate-500 hover:text-slate-700 px-3 py-2">
+            {isAr ? 'مسح' : 'Clear'}
+          </button>
+        )}
+      </div>
+
+      {/* Table */}
+      <div className="card overflow-hidden">
+        <div className="hidden md:grid grid-cols-[1.5fr_1fr_1.5fr_1.5fr_1.5fr_2fr] gap-3 px-5 py-3 bg-slate-50 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+          <span>{isAr ? 'التاريخ' : 'Date'}</span>
+          <span>{isAr ? 'رقم الطلب' : 'Request #'}</span>
+          <span>{isAr ? 'الإجراء' : 'Action'}</span>
+          <span>{isAr ? 'المنفذ' : 'Actor'}</span>
+          <span>{isAr ? 'من ← إلى' : 'From → To'}</span>
+          <span>{isAr ? 'الملاحظة' : 'Note'}</span>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {filtered.map(a => {
+            const reqNum = a.request_id ? reqMap[a.request_id] : null;
+            const label = ACTION_LABELS[a.action];
+            return (
+              <div key={a.id} className="grid md:grid-cols-[1.5fr_1fr_1.5fr_1.5fr_1.5fr_2fr] gap-3 px-5 py-3 items-center">
+                <span className="text-xs text-slate-500">{formatDate(a.created_at)}</span>
+                <span className="text-xs font-mono text-indigo-600">
+                  {reqNum ? (
+                    <Link href={`/dashboard/requests/${a.request_id}`} className="hover:underline">{reqNum}</Link>
+                  ) : '—'}
+                </span>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium w-fit ${actionBadge(a.action)}`}>
+                  {label ? (isAr ? label.ar : label.en) : a.action}
+                </span>
+                <span className="text-xs text-slate-700">{getName(a.actor_id)}</span>
+                <span className="text-xs text-slate-500">
+                  {a.from_status && a.to_status ? `${a.from_status} → ${a.to_status}` : '—'}
+                </span>
+                <span className="text-xs text-slate-500 truncate">{a.note || '—'}</span>
+              </div>
+            );
+          })}
+          {filtered.length === 0 && (
+            <div className="py-12 text-center">
+              <p className="text-4xl mb-3">📜</p>
+              <p className="text-slate-500 text-sm">{isAr ? 'لا توجد نتائج' : 'No results'}</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

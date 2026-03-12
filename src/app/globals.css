@@ -2,43 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
-    --eagle-primary: #0F4C81;
-    --eagle-secondary: #1A6FB5;
-    --eagle-accent: #D4A843;
-    --eagle-dark: #0A3558;
-    --eagle-surface: #F8FAFC;
-  }
-  * { scrollbar-width: thin; scrollbar-color: #CBD5E1 transparent; }
-  *::-webkit-scrollbar { width: 6px; height: 6px; }
-  *::-webkit-scrollbar-track { background: transparent; }
-  *::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
-  *::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
-}
-
 @layer components {
-  .glass-card { @apply bg-white/80 backdrop-blur-xl border border-white/20 shadow-lg rounded-2xl; }
-  .eagle-gradient { background: linear-gradient(135deg, #0A3558 0%, #0F4C81 30%, #1A6FB5 70%, #2196F3 100%); }
-  .gold-gradient { background: linear-gradient(135deg, #D4A843 0%, #F0C75E 50%, #D4A843 100%); }
-  .eagle-glow { box-shadow: 0 0 40px rgba(15, 76, 129, 0.15), 0 0 80px rgba(15, 76, 129, 0.05); }
-  .status-badge { @apply inline-flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-full border; }
-  .sidebar-link { @apply flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200; }
-  .sidebar-link:hover { @apply bg-white/10; }
-  .sidebar-link.active { @apply bg-white/15 text-white shadow-sm; }
-  .input-field {
-    @apply w-full px-4 py-3 rounded-xl border border-slate-200 bg-white text-slate-900
-           placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-eagle-500/30
-           focus:border-eagle-500 transition-all duration-200;
-  }
   .btn-primary {
-    @apply px-6 py-3 rounded-xl font-semibold text-white bg-eagle-600
-           hover:bg-eagle-700 active:bg-eagle-800 transition-all duration-200
-           shadow-lg shadow-eagle-600/20 hover:shadow-xl hover:shadow-eagle-600/30;
+    @apply bg-blue-600 text-white rounded-xl px-5 py-2.5 font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
   }
-  .kpi-card { @apply bg-white rounded-2xl border border-slate-100 p-6 shadow-sm hover:shadow-md transition-shadow; }
+  .btn-secondary {
+    @apply bg-white text-slate-700 rounded-xl px-5 py-2.5 font-semibold border border-slate-200 hover:bg-slate-50 transition-colors;
+  }
+  .input-field {
+    @apply w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-colors bg-white text-slate-900;
+  }
+  .kpi-card {
+    @apply bg-white rounded-2xl border border-slate-100 shadow-sm p-5;
+  }
+  .card {
+    @apply bg-white rounded-2xl border border-slate-100 shadow-sm;
+  }
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out;
+  }
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
 }
 
-[dir="rtl"] .sidebar-link svg { margin-left: 0; }
-@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
-.animate-float { animation: float 6s ease-in-out infinite; }
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+html[dir="rtl"] body {
+  font-family: 'IBM Plex Sans Arabic', 'system-ui', sans-serif;
+}
+
+html[dir="ltr"] body {
+  font-family: 'IBM Plex Sans', 'system-ui', sans-serif;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900;
+}

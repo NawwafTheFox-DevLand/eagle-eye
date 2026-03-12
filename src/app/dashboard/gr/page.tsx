@@ -1,10 +1,19 @@
-import { getGRStats, getGRAlerts } from '@/app/actions/gr';
-import { getSessionEmployee } from '@/app/actions/requests';
+import { redirect } from 'next/navigation';
+import { createClient } from '@/lib/supabase/server';
+import { getGRStats, getGRAccess } from '@/app/actions/gr';
 import GRDashboardClient from './GRDashboardClient';
 
-export default async function GRDashboardPage() {
-  const [stats, alerts, employee] = await Promise.all([getGRStats(), getGRAlerts(), getSessionEmployee()]);
-  const roles = employee?.roles?.map((r: any) => r.role) || [];
-  const isReadOnly = (roles.includes('super_admin') || roles.includes('ceo')) && !roles.includes('gr_employee') && !roles.includes('gr_manager');
-  return <GRDashboardClient stats={stats} alerts={alerts} isReadOnly={isReadOnly} />;
+export const dynamic = 'force-dynamic';
+
+export default async function GRPage() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
+
+  const hasAccess = await getGRAccess();
+  if (!hasAccess) redirect('/dashboard');
+
+  const stats = await getGRStats();
+
+  return <GRDashboardClient stats={stats} />;
 }

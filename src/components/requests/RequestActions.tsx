@@ -1,364 +1,600 @@
 'use client';
-
 import { useState, useTransition, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import {
-  approveRequest, rejectRequest, sendBackRequest, forwardRequest,
-  handleMyself, assignExecutionToEmployee, markDoneByEmployee,
-  finalComplete, returnToEmployee, getDeptEmployeesForAssign,
+  forwardRequest, returnRequest, askRequester, resubmitRequest,
+  assignToEmployee, stampCompanyExit, stampFinance, stampHR, stampCEO,
+  completeRequest, rejectRequest, cancelRequest, getDepartmentEmployees,
 } from '@/app/actions/requests';
+import { uploadEvidence } from '@/app/actions/evidence';
+import { completeOnboardingChild } from '@/app/actions/onboarding';
 
 interface Props {
   requestId: string;
-  stepId?: string;
   requestStatus: string;
+  assignedTo: string | null;
   currentEmployeeId: string;
-  isDeptManager: boolean;
-  isAssignedEmployee: boolean;
-  hasEmployeeCompleted: boolean;
-  departmentId?: string;
+  requesterId: string;
+  originCompanyId: string | null;
+  destinationDeptId: string | null;
+  isDeptHead: boolean;
+  isOriginCompanyCEO: boolean;
+  isHoldingCEO: boolean;
+  isFinanceHead: boolean;
+  isHRHead: boolean;
+  requiresCeo: boolean;
+  requiresHr: boolean;
+  requiresFinance: boolean;
+  ceoStampedAt: string | null;
+  hrStampedAt: string | null;
+  financeStampedAt: string | null;
+  companyExitStampedAt: string | null;
   companies: any[];
   departments: any[];
+  isOnboardingChild?: boolean;
+  dependsOnStatus?: string | null;
+}
+
+function GateBadge({ icon, label, done, isAr }: { icon: string; label: string; done: boolean; isAr: boolean }) {
+  return (
+    <div className={`flex items-center gap-2 text-sm px-3 py-1.5 rounded-full w-fit ${done ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+      <span>{icon}</span>
+      <span className="font-medium">{label}</span>
+      <span>{done ? '✅' : '⏳'}</span>
+      <span className="text-xs">{done ? (isAr ? 'تمت' : 'Done') : (isAr ? 'مطلوبة' : 'Pending')}</span>
+    </div>
+  );
 }
 
 export default function RequestActions({
-  requestId, stepId, requestStatus, currentEmployeeId,
-  isDeptManager, isAssignedEmployee, hasEmployeeCompleted,
-  departmentId, companies, departments,
+  requestId,
+  requestStatus,
+  assignedTo,
+  currentEmployeeId,
+  requesterId,
+  originCompanyId,
+  destinationDeptId,
+  isDeptHead,
+  isOriginCompanyCEO,
+  isHoldingCEO,
+  isFinanceHead,
+  isHRHead,
+  requiresCeo,
+  requiresHr,
+  requiresFinance,
+  ceoStampedAt,
+  hrStampedAt,
+  financeStampedAt,
+  companyExitStampedAt,
+  companies,
+  departments,
+  isOnboardingChild = false,
+  dependsOnStatus = null,
 }: Props) {
   const { lang } = useLanguage();
+  const isAr = lang === 'ar';
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const isAr = lang === 'ar';
 
-  // Form state
   const [note, setNote] = useState('');
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState<string | null>(null);
 
-  // Forward panel
   const [showForward, setShowForward] = useState(false);
-  const [fwCompanyId, setFwCompanyId] = useState('');
-  const [fwDeptId, setFwDeptId] = useState('');
-  const [fwEmpId, setFwEmpId] = useState('');
-  const [fwDeptEmps, setFwDeptEmps] = useState<any[]>([]);
-
-  // Assign panel
   const [showAssign, setShowAssign] = useState(false);
+
+  const [fwdCompanyId, setFwdCompanyId] = useState('');
+  const [fwdDeptId, setFwdDeptId] = useState('');
+  const [fwdEmployeeId, setFwdEmployeeId] = useState('');
+  const [fwdPersonName, setFwdPersonName] = useState('');
+  const [fwdDeptEmployees, setFwdDeptEmployees] = useState<any[]>([]);
+
   const [assignEmpId, setAssignEmpId] = useState('');
-  const [deptEmps, setDeptEmps] = useState<any[]>([]);
+  const [assignName, setAssignName] = useState('');
+  const [assignDeptEmployees, setAssignDeptEmployees] = useState<any[]>([]);
 
-  // ── Scenario detection ────────────────────────────────────────
-  const isApproval     = !!stepId;
-  const isExecManager  = !isApproval && requestStatus === 'pending_execution' && isDeptManager;
-  const isExecEmployee = !isApproval && (
-    (requestStatus === 'assigned_to_employee' && isAssignedEmployee) ||
-    (requestStatus === 'in_progress' && isAssignedEmployee && !isDeptManager)
-  );
-  const isManagerSignOff = !isApproval && requestStatus === 'in_progress' && isDeptManager;
-
-  if (!isApproval && !isExecManager && !isExecEmployee && !isManagerSignOff) return null;
-
-  // ── Header config ─────────────────────────────────────────────
-  const header = isApproval
-    ? { bg: 'bg-amber-50 border-amber-200', tc: 'text-amber-900', title: isAr ? '⏳ بانتظار إجراءك' : '⏳ Awaiting Your Action', sub: isAr ? 'هذا الطلب يحتاج موافقتك للمتابعة' : 'This request requires your action to proceed' }
-    : isExecManager
-    ? { bg: 'bg-violet-50 border-violet-200', tc: 'text-violet-900', title: isAr ? '🔧 بانتظار التنفيذ' : '🔧 Pending Execution', sub: isAr ? 'هذا الطلب اعتُمد وبانتظار تنفيذه من قسمك' : 'This request was approved and awaits execution by your department' }
-    : isExecEmployee
-    ? { bg: 'bg-cyan-50 border-cyan-200', tc: 'text-cyan-900', title: isAr ? '🎯 مهمة مسندة إليك' : '🎯 Task Assigned to You', sub: isAr ? 'أنجز المهمة وسيقوم المدير بالتوقيع النهائي' : 'Complete the task and your manager will do the final sign-off' }
-    : { bg: 'bg-emerald-50 border-emerald-200', tc: 'text-emerald-900', title: isAr ? '✅ بانتظار الإنجاز النهائي' : '✅ Pending Final Completion', sub: isAr ? 'أنت مسؤول الإنجاز النهائي لهذا الطلب' : 'You are responsible for the final completion of this request' };
-
-  // ── Load assign dropdown ──────────────────────────────────────
   useEffect(() => {
-    if (showAssign && deptEmps.length === 0 && departmentId) {
-      startTransition(async () => {
-        const emps = await getDeptEmployeesForAssign(departmentId);
-        setDeptEmps(emps.filter((e: any) => e.id !== currentEmployeeId));
-      });
+    if (destinationDeptId) {
+      getDepartmentEmployees(destinationDeptId).then(setAssignDeptEmployees);
     }
-  }, [showAssign, departmentId]);
+  }, [destinationDeptId]);
 
-  // ── Load forward dept employees ───────────────────────────────
-  useEffect(() => {
-    if (showForward && fwDeptId) {
-      startTransition(async () => {
-        const emps = await getDeptEmployeesForAssign(fwDeptId);
-        setFwDeptEmps(emps);
-      });
-    } else {
-      setFwDeptEmps([]);
-      setFwEmpId('');
-    }
-  }, [showForward, fwDeptId]);
-
-  // Departments filtered by company selection
-  const forwardDepts = fwCompanyId
-    ? departments.filter((d: any) => d.company_id === fwCompanyId)
-    : departments;
-
-  // ── Helpers ───────────────────────────────────────────────────
-  function buildEvidenceForm(): FormData | undefined {
-    if (selectedFiles.length === 0) return undefined;
-    const fd = new FormData();
-    selectedFiles.forEach(f => fd.append('files', f));
-    return fd;
+  // Show success banner (replaces the whole panel while redirecting)
+  if (success) {
+    return (
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-center">
+        <div className="text-3xl mb-3">✅</div>
+        <p className="text-emerald-800 font-semibold text-lg">{success}</p>
+        <p className="text-emerald-600 text-sm mt-2">
+          {isAr ? 'جاري التحويل...' : 'Redirecting...'}
+        </p>
+      </div>
+    );
   }
 
-  function submit(fn: () => Promise<void>) {
+  // ── Onboarding child: restricted panel ──────────────────────────────────────
+  if (isOnboardingChild && requestStatus === 'in_progress' && assignedTo === currentEmployeeId) {
+    const isLocked = !!dependsOnStatus && dependsOnStatus !== 'completed';
+
+    function handleOnboardingComplete() {
+      if (!note.trim()) { setError(isAr ? 'الملاحظات مطلوبة' : 'Notes are required'); return; }
+      setError('');
+      startTransition(async () => {
+        const result = await completeOnboardingChild(requestId, note);
+        if (result.error) { setError(result.error); return; }
+        setSuccess(isAr ? 'تم إنجاز المهمة بنجاح' : 'Task completed successfully');
+        setTimeout(() => router.push('/dashboard/inbox'), 2000);
+      });
+    }
+
+    function handleOnboardingReject() {
+      if (!note.trim()) { setError(isAr ? 'الملاحظات مطلوبة' : 'Notes are required'); return; }
+      setError('');
+      startTransition(async () => {
+        const result = await rejectRequest(requestId, note);
+        if (result.error) { setError(result.error); return; }
+        setSuccess(isAr ? 'تم رفض المهمة' : 'Task rejected');
+        setTimeout(() => router.push('/dashboard/inbox'), 2000);
+      });
+    }
+
+    if (isLocked) {
+      return (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-2xl">🔒</span>
+            <div>
+              <p className="font-semibold text-amber-900">{isAr ? 'هذه المهمة مقفلة' : 'Task is Locked'}</p>
+              <p className="text-sm text-amber-700 mt-0.5">
+                {isAr
+                  ? 'تنتظر اكتمال مهمة أخرى قبل أن تصبح قابلة للتنفيذ'
+                  : 'Awaiting completion of a prerequisite task before this can be acted on'}
+              </p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="bg-white rounded-2xl border border-slate-100 p-5 space-y-4">
+        <h3 className="font-bold text-slate-900">
+          🧑‍💼 {isAr ? 'مهمة التعيين' : 'Onboarding Task'}
+        </h3>
+        <div className="space-y-3">
+          <textarea
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            rows={3}
+            placeholder={isAr ? 'الملاحظات *' : 'Notes *'}
+            className="input-field resize-none"
+          />
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={handleOnboardingComplete}
+            disabled={isPending}
+            className="flex-1 rounded-xl px-4 py-2 text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors">
+            ✅ {isAr ? 'إنجاز المهمة' : 'Complete Task'}
+          </button>
+          <button
+            onClick={handleOnboardingReject}
+            disabled={isPending}
+            className="rounded-xl px-4 py-2 text-sm font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors">
+            ❌ {isAr ? 'رفض' : 'Reject'}
+          </button>
+        </div>
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">{error}</div>
+        )}
+      </div>
+    );
+  }
+
+  // Gate: show nothing if user can't act
+  const canAct = (() => {
+    if (!['in_progress', 'pending_clarification', 'draft'].includes(requestStatus)) return false;
+    if (requestStatus === 'in_progress' && assignedTo !== currentEmployeeId) return false;
+    if (requestStatus === 'pending_clarification' && currentEmployeeId !== requesterId) return false;
+    if (requestStatus === 'draft' && currentEmployeeId !== requesterId) return false;
+    return true;
+  })();
+
+  if (!canAct) return null;
+
+  // ── Shared helpers ───────────────────────────────────────────────────────────
+
+  async function uploadFiles() {
+    if (files.length > 0) {
+      const fd = new FormData();
+      files.forEach(f => fd.append('files', f));
+      await uploadEvidence(requestId, fd);
+    }
+  }
+
+  function requireNote(): boolean {
+    if (!note.trim()) {
+      setError(isAr ? 'الملاحظات مطلوبة' : 'Notes are required');
+      return false;
+    }
+    return true;
+  }
+
+  // ── Action handlers ──────────────────────────────────────────────────────────
+
+  function handleForward() {
+    if (!requireNote()) return;
+    if (!fwdDeptId) { setError(isAr ? 'اختر القسم أولاً' : 'Select a department'); return; }
     setError('');
     startTransition(async () => {
-      try {
-        await fn();
-        router.refresh();
-        setNote('');
-        setSelectedFiles([]);
-        setShowForward(false);
-        setShowAssign(false);
-        setFwCompanyId(''); setFwDeptId(''); setFwEmpId('');
-        setAssignEmpId('');
-      } catch (e: any) {
-        setError(e.message || (isAr ? 'حدث خطأ' : 'An error occurred'));
-      }
+      await uploadFiles();
+      const result = await forwardRequest(requestId, note, fwdDeptId, fwdCompanyId, fwdEmployeeId || undefined);
+      if (result.error) { setError(result.error); return; }
+      const name = fwdPersonName || (isAr ? 'رئيس القسم' : 'Department Head');
+      setSuccess(isAr ? `تم التحويل إلى ${name}` : `Forwarded to ${name}`);
+      setTimeout(() => router.push('/dashboard/inbox'), 2000);
     });
   }
 
-  function handleAction(action: 'approve' | 'reject' | 'sendback' | 'handle' | 'done' | 'complete' | 'return') {
-    if (!note.trim()) { setError(isAr ? 'المبررات مطلوبة' : 'Justification is required'); return; }
-    if (action === 'reject' && selectedFiles.length === 0) { setError(isAr ? 'المرفقات مطلوبة عند الرفض' : 'Evidence is required for rejection'); return; }
-    const ev = buildEvidenceForm();
-    submit(async () => {
-      if      (action === 'approve')  await approveRequest(requestId, note, stepId!, ev);
-      else if (action === 'reject')   await rejectRequest(requestId, note, stepId!, ev);
-      else if (action === 'sendback') await sendBackRequest(requestId, note, stepId, ev);
-      else if (action === 'handle')   await handleMyself(requestId, note, ev);
-      else if (action === 'done')     await markDoneByEmployee(requestId, note, ev);
-      else if (action === 'complete') await finalComplete(requestId, note, ev);
-      else if (action === 'return')   await returnToEmployee(requestId, note);
+  function handleAssign() {
+    if (!requireNote()) return;
+    if (!assignEmpId) { setError(isAr ? 'اختر موظفاً أولاً' : 'Select an employee'); return; }
+    setError('');
+    startTransition(async () => {
+      await uploadFiles();
+      const result = await assignToEmployee(requestId, assignEmpId, note);
+      if (result.error) { setError(result.error); return; }
+      setSuccess(isAr ? `تم التعيين إلى ${assignName}` : `Assigned to ${assignName}`);
+      setTimeout(() => router.push('/dashboard/inbox'), 2000);
     });
   }
 
-  function handleForwardSubmit() {
-    if (!note.trim()) { setError(isAr ? 'المبررات مطلوبة' : 'Justification is required'); return; }
-    if (!fwDeptId)    { setError(isAr ? 'اختر قسماً مستهدفاً' : 'Select a target department'); return; }
-    submit(async () => {
-      await forwardRequest(requestId, note, fwCompanyId, fwDeptId, fwEmpId || undefined, stepId);
+  function handleReturn() {
+    if (!requireNote()) return;
+    setError('');
+    startTransition(async () => {
+      await uploadFiles();
+      const result = await returnRequest(requestId, note);
+      if (result.error) { setError(result.error); return; }
+      setSuccess(isAr ? 'تم الإرجاع بنجاح' : 'Returned successfully');
+      setTimeout(() => router.push('/dashboard/inbox'), 2000);
     });
   }
 
-  function handleAssignSubmit() {
-    if (!assignEmpId) { setError(isAr ? 'اختر موظفاً' : 'Select an employee'); return; }
-    submit(async () => {
-      await assignExecutionToEmployee(requestId, assignEmpId, note, buildEvidenceForm());
+  function handleAskRequester() {
+    if (!requireNote()) return;
+    setError('');
+    startTransition(async () => {
+      await uploadFiles();
+      const result = await askRequester(requestId, note);
+      if (result.error) { setError(result.error); return; }
+      setSuccess(isAr ? 'تم إرسال طلب التوضيح' : 'Clarification request sent');
+      setTimeout(() => router.push('/dashboard/inbox'), 2000);
     });
   }
 
-  // ── Render ────────────────────────────────────────────────────
+  function handleComplete() {
+    if (!requireNote()) return;
+    setError('');
+    startTransition(async () => {
+      await uploadFiles();
+      const result = await completeRequest(requestId, note);
+      if (result.error) { setError(result.error); return; }
+      setSuccess(isAr ? 'تم إنجاز الطلب بنجاح' : 'Request completed successfully');
+      setTimeout(() => router.push('/dashboard/requests'), 2000);
+    });
+  }
+
+  function handleReject() {
+    if (!requireNote()) return;
+    setError('');
+    startTransition(async () => {
+      await uploadFiles();
+      const result = await rejectRequest(requestId, note);
+      if (result.error) { setError(result.error); return; }
+      setSuccess(isAr ? 'تم رفض الطلب' : 'Request rejected');
+      setTimeout(() => router.push('/dashboard/requests'), 2000);
+    });
+  }
+
+  function handleResubmit() {
+    if (!requireNote()) return;
+    setError('');
+    startTransition(async () => {
+      await uploadFiles();
+      const result = await resubmitRequest(requestId, note);
+      if (result.error) { setError(result.error); return; }
+      setSuccess(isAr ? 'تمت إعادة التقديم' : 'Resubmitted successfully');
+      setTimeout(() => router.push('/dashboard/requests'), 2000);
+    });
+  }
+
+  function handleCancel() {
+    if (!requireNote()) return;
+    setError('');
+    startTransition(async () => {
+      await uploadFiles();
+      const result = await cancelRequest(requestId, note);
+      if (result.error) { setError(result.error); return; }
+      setSuccess(isAr ? 'تم إلغاء الطلب' : 'Request cancelled');
+      setTimeout(() => router.push('/dashboard/requests'), 2000);
+    });
+  }
+
+  function handleStamp(fn: () => Promise<{ error: string | null }>) {
+    if (!requireNote()) return;
+    setError('');
+    startTransition(async () => {
+      const result = await fn();
+      if (result.error) { setError(result.error); return; }
+      setSuccess(isAr ? 'تمت الموافقة بنجاح' : 'Approved successfully');
+      setTimeout(() => { setSuccess(null); router.refresh(); }, 1000);
+    });
+  }
+
+  const showGates = requiresFinance || requiresHr || requiresCeo || isOriginCompanyCEO;
+
   return (
-    <div className={`rounded-2xl border p-6 space-y-5 ${header.bg}`}>
+    <div className="bg-white rounded-2xl border border-slate-100 p-5 space-y-4">
+      <h3 className="font-bold text-slate-900">{isAr ? 'الإجراءات المتاحة' : 'Available Actions'}</h3>
 
-      {/* Header */}
-      <div>
-        <h3 className={`font-semibold text-base ${header.tc}`}>{header.title}</h3>
-        <p className={`text-sm mt-0.5 opacity-70 ${header.tc}`}>{header.sub}</p>
-      </div>
-
-      {/* Error */}
-      {error && (
-        <div className="px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">{error}</div>
+      {/* Gate badges */}
+      {showGates && (
+        <div className="bg-white rounded-xl border border-slate-100 p-4 space-y-2">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+            {isAr ? 'البوابات المطلوبة' : 'Required Gates'}
+          </p>
+          {requiresFinance && (
+            <GateBadge icon="💰" label={isAr ? 'المالية' : 'Finance'} done={!!financeStampedAt} isAr={isAr} />
+          )}
+          {requiresHr && (
+            <GateBadge icon="👥" label={isAr ? 'الموارد البشرية' : 'HR'} done={!!hrStampedAt} isAr={isAr} />
+          )}
+          {requiresCeo && (
+            <GateBadge icon="🏛️" label={isAr ? 'الرئيس التنفيذي' : 'CEO'} done={!!ceoStampedAt} isAr={isAr} />
+          )}
+          {isOriginCompanyCEO && (
+            <GateBadge icon="🏢" label={isAr ? 'خروج الشركة' : 'Company Exit'} done={!!companyExitStampedAt} isAr={isAr} />
+          )}
+        </div>
       )}
 
-      {/* Justification */}
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1.5">
-          {isAr ? 'المبررات' : 'Justification'} <span className="text-red-500">*</span>
-        </label>
+      {/* Note + file upload */}
+      <div className="space-y-3">
         <textarea
           value={note}
-          onChange={e => { setNote(e.target.value); setError(''); }}
+          onChange={e => setNote(e.target.value)}
           rows={3}
-          className="input-field w-full"
-          placeholder={isAr ? 'اشرح قرارك بالتفصيل...' : 'Explain your decision in detail...'}
+          placeholder={isAr ? 'الملاحظات *' : 'Notes *'}
+          className="input-field resize-none"
         />
-      </div>
-
-      {/* Evidence upload */}
-      <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1.5">
-          {isAr ? 'المرفقات' : 'Evidence'}
-          {isApproval && (
-            <span className="text-xs text-slate-400 font-normal ms-2">
-              {isAr ? '(يُنصح بإرفاق مستند داعم)' : '(recommended to attach supporting document)'}
-            </span>
-          )}
-          {(isApproval) && <span className="text-xs text-red-400 font-normal ms-1">{isAr ? '— مطلوب عند الرفض' : '— required for rejection'}</span>}
-        </label>
         <input
           type="file"
           multiple
-          accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"
-          onChange={e => setSelectedFiles(Array.from(e.target.files || []))}
-          className="block w-full text-sm text-slate-500 file:me-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-white file:text-slate-700 hover:file:bg-slate-50 border border-slate-200 rounded-xl bg-white"
+          onChange={e => setFiles(Array.from(e.target.files || []))}
+          className="text-sm text-slate-600"
         />
-        {selectedFiles.length > 0 && (
-          <p className="text-xs text-slate-500 mt-1.5">
-            {selectedFiles.length} {isAr ? 'ملف محدد' : `file${selectedFiles.length > 1 ? 's' : ''} selected`}:&nbsp;
-            {selectedFiles.map(f => f.name).join(', ')}
+        {files.length > 0 && (
+          <p className="text-xs text-slate-500">
+            {files.length} {isAr ? 'ملف مرفق' : 'file(s) selected'}
           </p>
         )}
       </div>
 
-      {/* ── Action buttons ─────────────────────────────────────── */}
-      <div className="flex flex-wrap gap-2.5">
-
-        {/* Approval phase */}
-        {isApproval && (<>
-          <button onClick={() => handleAction('approve')} disabled={isPending}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm">
-            ✓ {isAr ? 'موافقة' : 'Approve'}
-          </button>
-          <button onClick={() => { setShowForward(v => !v); setShowAssign(false); }}
-            className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors ${showForward ? 'bg-blue-600 text-white shadow-sm' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}>
-            ↗ {isAr ? 'تحويل' : 'Forward'}
-          </button>
-          <button onClick={() => handleAction('sendback')} disabled={isPending}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 disabled:opacity-50 transition-colors">
-            ↩ {isAr ? 'طلب توضيح' : 'Send Back'}
-          </button>
-          <button onClick={() => handleAction('reject')} disabled={isPending}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-red-700 bg-red-50 hover:bg-red-100 disabled:opacity-50 transition-colors">
-            ✗ {isAr ? 'رفض' : 'Reject'}
-          </button>
-        </>)}
-
-        {/* Execution manager — pending_execution */}
-        {isExecManager && (<>
-          <button onClick={() => handleAction('handle')} disabled={isPending}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 transition-colors shadow-sm">
-            🔧 {isAr ? 'تنفيذ بنفسي' : 'Handle Myself'}
-          </button>
-          <button onClick={() => { setShowAssign(v => !v); setShowForward(false); }}
-            className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors ${showAssign ? 'bg-indigo-600 text-white shadow-sm' : 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'}`}>
-            👤 {isAr ? 'تعيين لموظف' : 'Assign'}
-          </button>
-          <button onClick={() => { setShowForward(v => !v); setShowAssign(false); }}
-            className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors ${showForward ? 'bg-blue-600 text-white shadow-sm' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}>
-            ↗ {isAr ? 'تحويل' : 'Forward'}
-          </button>
-          <button onClick={() => handleAction('sendback')} disabled={isPending}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 disabled:opacity-50 transition-colors">
-            ↩ {isAr ? 'طلب توضيح' : 'Send Back'}
-          </button>
-        </>)}
-
-        {/* Execution employee — assigned_to_employee / in_progress */}
-        {isExecEmployee && (<>
-          <button onClick={() => handleAction('done')} disabled={isPending}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm">
-            ✅ {isAr ? 'تم الإنجاز' : 'Mark Done'}
-          </button>
-          <button onClick={() => handleAction('sendback')} disabled={isPending}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 disabled:opacity-50 transition-colors">
-            ↩ {isAr ? 'طلب توضيح' : 'Request Clarification'}
-          </button>
-        </>)}
-
-        {/* Manager sign-off — in_progress */}
-        {isManagerSignOff && (<>
-          <button onClick={() => handleAction('complete')} disabled={isPending}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm">
-            🏁 {isAr ? 'إنجاز نهائي' : 'Final Complete'}
-          </button>
-          {hasEmployeeCompleted && (
-            <button onClick={() => handleAction('return')} disabled={isPending}
-              className="px-5 py-2.5 rounded-xl text-sm font-semibold text-amber-700 bg-amber-100 hover:bg-amber-200 disabled:opacity-50 transition-colors">
-              ↩ {isAr ? 'إعادة للموظف' : 'Return to Employee'}
+      {/* in_progress actions */}
+      {requestStatus === 'in_progress' && assignedTo === currentEmployeeId && (
+        <>
+          {/* Stamp buttons */}
+          {isOriginCompanyCEO && !companyExitStampedAt && (
+            <button
+              onClick={() => handleStamp(() => stampCompanyExit(requestId, note))}
+              disabled={isPending}
+              className="rounded-xl px-4 py-2 text-sm font-semibold transition-colors bg-emerald-600 hover:bg-emerald-700 text-white w-full">
+              🏢 {isAr ? 'موافقة خروج الشركة' : 'Approve Company Exit'}
             </button>
           )}
-          <button onClick={() => { setShowForward(v => !v); setShowAssign(false); }}
-            className={`px-5 py-2.5 rounded-xl text-sm font-semibold transition-colors ${showForward ? 'bg-blue-600 text-white shadow-sm' : 'bg-blue-100 text-blue-700 hover:bg-blue-200'}`}>
-            ↗ {isAr ? 'تحويل' : 'Forward'}
-          </button>
-        </>)}
-      </div>
+          {isFinanceHead && requiresFinance && !financeStampedAt && (
+            <button
+              onClick={() => handleStamp(() => stampFinance(requestId, note))}
+              disabled={isPending}
+              className="rounded-xl px-4 py-2 text-sm font-semibold transition-colors bg-emerald-600 hover:bg-emerald-700 text-white w-full">
+              💰 {isAr ? 'اعتماد مالي' : 'Finance Stamp'}
+            </button>
+          )}
+          {isHRHead && requiresHr && !hrStampedAt && (
+            <button
+              onClick={() => handleStamp(() => stampHR(requestId, note))}
+              disabled={isPending}
+              className="rounded-xl px-4 py-2 text-sm font-semibold transition-colors bg-emerald-600 hover:bg-emerald-700 text-white w-full">
+              👥 {isAr ? 'موافقة الموارد البشرية' : 'HR Stamp'}
+            </button>
+          )}
+          {isHoldingCEO && requiresCeo && !ceoStampedAt && (
+            <button
+              onClick={() => handleStamp(() => stampCEO(requestId, note))}
+              disabled={isPending}
+              className="rounded-xl px-4 py-2 text-sm font-semibold transition-colors bg-emerald-600 hover:bg-emerald-700 text-white w-full">
+              🏛️ {isAr ? 'موافقة الرئيس التنفيذي' : 'CEO Stamp'}
+            </button>
+          )}
 
-      {/* ── Forward sub-panel ─────────────────────────────────── */}
-      {showForward && (
-        <div className="bg-white rounded-xl border border-blue-200 p-4 space-y-3">
-          <h4 className="text-sm font-semibold text-blue-900">↗ {isAr ? 'تحويل الطلب إلى' : 'Forward Request To'}</h4>
-
-          {/* Company */}
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">{isAr ? 'الشركة' : 'Company'}</label>
-            <select
-              value={fwCompanyId}
-              onChange={e => { setFwCompanyId(e.target.value); setFwDeptId(''); setFwEmpId(''); }}
-              className="input-field w-full text-sm">
-              <option value="">{isAr ? 'اختر الشركة...' : 'Select company...'}</option>
-              {companies.map((c: any) => (
-                <option key={c.id} value={c.id}>{isAr ? c.name_ar : (c.name_en || c.name_ar)}</option>
-              ))}
-            </select>
+          {/* Regular action buttons */}
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => { setShowForward(f => !f); setShowAssign(false); }}
+              disabled={isPending}
+              className="rounded-xl px-4 py-2 text-sm font-semibold transition-colors bg-blue-600 text-white hover:bg-blue-700">
+              ↗ {isAr ? 'تحويل' : 'Forward'}
+            </button>
+            {isDeptHead && (
+              <button
+                onClick={() => { setShowAssign(a => !a); setShowForward(false); }}
+                disabled={isPending}
+                className="rounded-xl px-4 py-2 text-sm font-semibold transition-colors bg-indigo-600 text-white hover:bg-indigo-700">
+                👤 {isAr ? 'تعيين' : 'Assign'}
+              </button>
+            )}
+            <button
+              onClick={handleReturn}
+              disabled={isPending}
+              className="rounded-xl px-4 py-2 text-sm font-semibold transition-colors bg-amber-500 text-white hover:bg-amber-600">
+              ↩ {isAr ? 'إرجاع' : 'Return'}
+            </button>
+            <button
+              onClick={handleAskRequester}
+              disabled={isPending}
+              className="rounded-xl px-4 py-2 text-sm font-semibold transition-colors bg-amber-500 text-white hover:bg-amber-600">
+              ↩ {isAr ? 'طلب توضيح' : 'Ask Requester'}
+            </button>
+            {(isDeptHead || isHoldingCEO) && (
+              <button
+                onClick={handleComplete}
+                disabled={isPending}
+                className="rounded-xl px-4 py-2 text-sm font-semibold transition-colors bg-emerald-600 text-white hover:bg-emerald-700">
+                ✅ {isAr ? 'إنجاز' : 'Complete'}
+              </button>
+            )}
+            <button
+              onClick={handleReject}
+              disabled={isPending}
+              className="rounded-xl px-4 py-2 text-sm font-semibold transition-colors bg-red-600 text-white hover:bg-red-700">
+              ❌ {isAr ? 'رفض' : 'Reject'}
+            </button>
           </div>
 
-          {/* Department */}
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">{isAr ? 'القسم' : 'Department'} <span className="text-red-500">*</span></label>
-            <select
-              value={fwDeptId}
-              onChange={e => { setFwDeptId(e.target.value); setFwEmpId(''); }}
-              className="input-field w-full text-sm">
-              <option value="">{isAr ? 'اختر القسم...' : 'Select department...'}</option>
-              {forwardDepts.map((d: any) => (
-                <option key={d.id} value={d.id}>{isAr ? d.name_ar : (d.name_en || d.name_ar)}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Person (optional) */}
-          {fwDeptId && (
-            <div>
-              <label className="block text-xs text-slate-500 mb-1">
-                {isAr ? 'الموظف (اختياري — إذا لم تختر سيُحوَّل لمدير القسم)' : 'Person (optional — defaults to dept manager)'}
-              </label>
-              <select value={fwEmpId} onChange={e => setFwEmpId(e.target.value)} className="input-field w-full text-sm">
-                <option value="">{isAr ? 'مدير القسم (تلقائي)' : 'Dept Manager (default)'}</option>
-                {fwDeptEmps.map((e: any) => (
-                  <option key={e.id} value={e.id}>
-                    {isAr ? e.full_name_ar : (e.full_name_en || e.full_name_ar)} ({e.employee_code})
-                  </option>
+          {/* Forward sub-panel */}
+          {showForward && (
+            <div className="border border-blue-200 rounded-xl p-4 bg-blue-50 space-y-3">
+              <p className="font-semibold text-sm text-blue-900">{isAr ? 'تحويل الطلب' : 'Forward Request'}</p>
+              <select
+                value={fwdCompanyId}
+                onChange={e => {
+                  setFwdCompanyId(e.target.value);
+                  setFwdDeptId('');
+                  setFwdEmployeeId('');
+                  setFwdPersonName('');
+                }}
+                className="input-field text-sm">
+                <option value="">{isAr ? 'اختر الشركة' : 'Select Company'}</option>
+                {companies.map(c => (
+                  <option key={c.id} value={c.id}>{isAr ? c.name_ar : (c.name_en || c.name_ar)}</option>
                 ))}
               </select>
+              <select
+                value={fwdDeptId}
+                onChange={async e => {
+                  setFwdDeptId(e.target.value);
+                  setFwdEmployeeId('');
+                  setFwdPersonName('');
+                  if (e.target.value) {
+                    const emps = await getDepartmentEmployees(e.target.value);
+                    setFwdDeptEmployees(emps);
+                  }
+                }}
+                className="input-field text-sm"
+                disabled={!fwdCompanyId}>
+                <option value="">{isAr ? 'اختر القسم' : 'Select Department'}</option>
+                {departments
+                  .filter(d => d.company_id === fwdCompanyId)
+                  .map(d => (
+                    <option key={d.id} value={d.id}>{isAr ? d.name_ar : (d.name_en || d.name_ar)}</option>
+                  ))}
+              </select>
+              {fwdDeptEmployees.length > 0 && (
+                <select
+                  value={fwdEmployeeId}
+                  onChange={e => {
+                    setFwdEmployeeId(e.target.value);
+                    const emp = fwdDeptEmployees.find(em => em.id === e.target.value);
+                    setFwdPersonName(emp ? (isAr ? emp.full_name_ar : (emp.full_name_en || emp.full_name_ar)) : '');
+                  }}
+                  className="input-field text-sm">
+                  <option value="">{isAr ? 'رئيس القسم (افتراضي)' : 'Dept Head (default)'}</option>
+                  {fwdDeptEmployees.map(e => (
+                    <option key={e.id} value={e.id}>{isAr ? e.full_name_ar : (e.full_name_en || e.full_name_ar)}</option>
+                  ))}
+                </select>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleForward}
+                  disabled={isPending}
+                  className="btn-primary text-sm flex-1">
+                  {isAr ? 'تأكيد التحويل' : 'Confirm Forward'}
+                </button>
+                <button onClick={() => setShowForward(false)} className="btn-secondary text-sm">
+                  {isAr ? 'إلغاء' : 'Cancel'}
+                </button>
+              </div>
             </div>
           )}
 
-          <button onClick={handleForwardSubmit} disabled={isPending || !fwDeptId}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors">
-            {isPending ? '...' : (isAr ? 'تأكيد التحويل' : 'Confirm Forward')}
+          {/* Assign sub-panel */}
+          {showAssign && (
+            <div className="border border-indigo-200 rounded-xl p-4 bg-indigo-50 space-y-3">
+              <p className="font-semibold text-sm text-indigo-900">{isAr ? 'تعيين لموظف' : 'Assign to Employee'}</p>
+              <select
+                value={assignEmpId}
+                onChange={e => {
+                  setAssignEmpId(e.target.value);
+                  const emp = assignDeptEmployees.find(em => em.id === e.target.value);
+                  setAssignName(emp ? (isAr ? emp.full_name_ar : (emp.full_name_en || emp.full_name_ar)) : '');
+                }}
+                className="input-field text-sm">
+                <option value="">{isAr ? 'اختر الموظف' : 'Select Employee'}</option>
+                {assignDeptEmployees.map(e => (
+                  <option key={e.id} value={e.id}>{isAr ? e.full_name_ar : (e.full_name_en || e.full_name_ar)}</option>
+                ))}
+              </select>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleAssign}
+                  disabled={isPending}
+                  className="btn-primary text-sm flex-1">
+                  {isAr ? 'تأكيد التعيين' : 'Confirm Assign'}
+                </button>
+                <button onClick={() => setShowAssign(false)} className="btn-secondary text-sm">
+                  {isAr ? 'إلغاء' : 'Cancel'}
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* pending_clarification actions */}
+      {requestStatus === 'pending_clarification' && currentEmployeeId === requesterId && (
+        <div className="flex gap-2">
+          <button
+            onClick={handleResubmit}
+            disabled={isPending}
+            className="btn-primary flex-1">
+            📤 {isAr ? 'إعادة التقديم' : 'Resubmit'}
+          </button>
+          <button
+            onClick={handleCancel}
+            disabled={isPending}
+            className="rounded-xl px-4 py-2 text-sm font-semibold transition-colors bg-red-600 text-white hover:bg-red-700">
+            🚫 {isAr ? 'إلغاء' : 'Cancel'}
           </button>
         </div>
       )}
 
-      {/* ── Assign sub-panel ──────────────────────────────────── */}
-      {showAssign && (
-        <div className="bg-white rounded-xl border border-indigo-200 p-4 space-y-3">
-          <h4 className="text-sm font-semibold text-indigo-900">👤 {isAr ? 'تعيين لموظف' : 'Assign to Employee'}</h4>
-          <div>
-            <label className="block text-xs text-slate-500 mb-1">{isAr ? 'الموظف' : 'Employee'} <span className="text-red-500">*</span></label>
-            <select value={assignEmpId} onChange={e => setAssignEmpId(e.target.value)} className="input-field w-full text-sm">
-              <option value="">{isAr ? 'اختر الموظف...' : 'Select employee...'}</option>
-              {deptEmps.map((e: any) => (
-                <option key={e.id} value={e.id}>
-                  {isAr ? e.full_name_ar : (e.full_name_en || e.full_name_ar)} ({e.employee_code})
-                </option>
-              ))}
-            </select>
-          </div>
-          <button onClick={handleAssignSubmit} disabled={isPending || !assignEmpId}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 transition-colors">
-            {isPending ? '...' : (isAr ? 'تأكيد التعيين' : 'Confirm Assignment')}
-          </button>
-        </div>
+      {/* draft actions */}
+      {requestStatus === 'draft' && currentEmployeeId === requesterId && (
+        <button
+          onClick={handleCancel}
+          disabled={isPending}
+          className="rounded-xl px-4 py-2 text-sm font-semibold transition-colors bg-red-600 text-white hover:bg-red-700 w-full">
+          🚫 {isAr ? 'إلغاء الطلب' : 'Cancel Request'}
+        </button>
+      )}
+
+      {/* Error feedback */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">{error}</div>
       )}
     </div>
   );

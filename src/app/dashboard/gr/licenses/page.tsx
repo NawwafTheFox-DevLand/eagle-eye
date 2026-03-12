@@ -1,9 +1,19 @@
-import { getGRLicenses, getGREntities } from '@/app/actions/gr';
-import { getSessionEmployee } from '@/app/actions/requests';
-import LicensesClient from './LicensesClient';
+import { redirect } from 'next/navigation';
+import { createClient } from '@/lib/supabase/server';
+import { getGRAccess, getGRLicenses } from '@/app/actions/gr';
+import GRLicensesClient from './GRLicensesClient';
+
+export const dynamic = 'force-dynamic';
+
 export default async function GRLicensesPage() {
-  const [licenses, entities, employee] = await Promise.all([getGRLicenses(), getGREntities(), getSessionEmployee()]);
-  const roles = employee?.roles?.map((r: any) => r.role) || [];
-  const isReadOnly = (roles.includes('super_admin') || roles.includes('ceo')) && !roles.includes('gr_employee') && !roles.includes('gr_manager');
-  return <LicensesClient licenses={licenses} entities={entities} isReadOnly={isReadOnly} />;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
+
+  const hasAccess = await getGRAccess();
+  if (!hasAccess) redirect('/dashboard');
+
+  const { data: licenses, error } = await getGRLicenses();
+
+  return <GRLicensesClient licenses={licenses} error={error} />;
 }

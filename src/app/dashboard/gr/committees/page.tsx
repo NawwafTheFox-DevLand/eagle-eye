@@ -1,9 +1,19 @@
-import { getGRCommittees } from '@/app/actions/gr';
-import { getSessionEmployee } from '@/app/actions/requests';
-import CommitteesClient from './CommitteesClient';
+import { redirect } from 'next/navigation';
+import { createClient } from '@/lib/supabase/server';
+import { getGRAccess, getGRCommittees } from '@/app/actions/gr';
+import GRCommitteesClient from './GRCommitteesClient';
+
+export const dynamic = 'force-dynamic';
+
 export default async function GRCommitteesPage() {
-  const [committees, employee] = await Promise.all([getGRCommittees(), getSessionEmployee()]);
-  const roles = employee?.roles?.map((r: any) => r.role) || [];
-  const isReadOnly = (roles.includes('super_admin') || roles.includes('ceo')) && !roles.includes('gr_employee') && !roles.includes('gr_manager');
-  return <CommitteesClient committees={committees} isReadOnly={isReadOnly} />;
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
+
+  const hasAccess = await getGRAccess();
+  if (!hasAccess) redirect('/dashboard');
+
+  const { data: committees, error } = await getGRCommittees();
+
+  return <GRCommitteesClient committees={committees} error={error} />;
 }

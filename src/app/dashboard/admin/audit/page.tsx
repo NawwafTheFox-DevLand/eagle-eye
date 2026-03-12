@@ -1,39 +1,47 @@
-import { createServiceClient } from '@/lib/supabase/server';
-import { getSessionEmployee } from '@/app/actions/requests';
 import { redirect } from 'next/navigation';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import AuditClient from './AuditClient';
 
-export default async function AuditPage() {
-  const [service, employee] = await Promise.all([createServiceClient(), getSessionEmployee()]);
-  if (!employee) redirect('/login');
+export const dynamic = 'force-dynamic';
 
-  const roles = employee.roles?.map((r: any) => r.role) || [];
-  const canAccess = roles.some((r: string) => ['super_admin', 'ceo', 'audit_reviewer'].includes(r));
-  if (!canAccess) redirect('/dashboard');
+export default async function AdminAuditPage() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect('/login');
 
-  const { data: actions } = await service
-    .from('request_actions')
-    .select('id, request_id, action, rationale, note, from_status, to_status, created_at, actor_id')
+  const service = await createServiceClient();
+
+  const { data: me } = await service.from('employees').select('id').eq('auth_user_id', user.id).single();
+  if (!me) redirect('/login');
+
+  const { data: roleRows } = await service.from('user_roles').select('role')
+    .eq('employee_id', me.id).eq('is_active', true);
+  if (!(roleRows || []).some((r: any) => r.role === 'super_admin')) redirect('/dashboard');
+
+  const { data: actions } = await service.from('request_actions')
+    .select('id, request_id, action, actor_id, from_person_id, to_person_id, from_status, to_status, note, created_at')
     .order('created_at', { ascending: false })
-    .limit(500);
+    .limit(200);
 
-  const actorIds = [...new Set((actions || []).map((a: any) => a.actor_id).filter(Boolean))];
-  const requestIds = [...new Set((actions || []).map((a: any) => a.request_id).filter(Boolean))];
+  const allActions = actions || [];
 
-  const [actorsResult, requestsResult] = await Promise.all([
-    actorIds.length > 0
-      ? service.from('employees').select('id, full_name_ar, full_name_en, employee_code').in('id', actorIds)
-      : Promise.resolve({ data: [] as any[] }),
-    requestIds.length > 0
-      ? service.from('requests').select('id, request_number, subject').in('id', requestIds)
-      : Promise.resolve({ data: [] as any[] }),
-  ]);
+  // Batch-fetch actor names
+  const actorIds = [...new Set(allActions.map(a => a.actor_id).filter(Boolean))] as string[];
+  const actorMap: Record<string, any> = {};
+  if (actorIds.length > 0) {
+    const { data: actors } = await service.from('employees')
+      .select('id, full_name_ar, full_name_en').in('id', actorIds);
+    for (const a of actors || []) actorMap[a.id] = a;
+  }
 
-  return (
-    <AuditClient
-      actions={actions || []}
-      actors={actorsResult.data || []}
-      requests={requestsResult.data || []}
-    />
-  );
+  // Batch-fetch request numbers
+  const reqIds = [...new Set(allActions.map(a => a.request_id).filter(Boolean))] as string[];
+  const reqMap: Record<string, string> = {};
+  if (reqIds.length > 0) {
+    const { data: reqs } = await service.from('requests')
+      .select('id, request_number').in('id', reqIds);
+    for (const r of reqs || []) reqMap[r.id] = r.request_number;
+  }
+
+  return <AuditClient actions={allActions} actorMap={actorMap} reqMap={reqMap} />;
 }
