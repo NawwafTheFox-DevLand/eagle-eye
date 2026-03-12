@@ -71,7 +71,7 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
       { data: persons },
       { data: companies },
       { data: departments },
-      { data: evidence },
+      { data: allEvidence },
       { data: allCompanies },
       { data: allDepartments },
       { data: empRoles },
@@ -85,7 +85,7 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
       deptIds.length > 0
         ? service.from('departments').select('id, name_ar, name_en, code, head_employee_id').in('id', deptIds)
         : Promise.resolve({ data: [] as any[] }),
-      service.from('evidence').select('id, file_name, file_url, file_type, file_size_bytes, uploaded_by, created_at').eq('request_id', id).order('created_at'),
+      service.from('evidence').select('id, file_name, file_url, file_type, file_size_bytes, uploaded_by, created_at').eq('request_id', id).order('created_at', { ascending: true }),
       service.from('companies').select('id, name_ar, name_en, code, is_holding').order('name_ar'),
       service.from('departments').select('id, name_ar, name_en, code, company_id').eq('is_active', true).order('name_ar'),
       service.from('user_roles').select('role, company_id').eq('employee_id', emp.id).eq('is_active', true),
@@ -153,6 +153,55 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
     const isFinanceHead      = roles.some((r: any) => r.role === 'finance_approver');
     const isHRHead           = roles.some((r: any) => r.role === 'hr_approver');
 
+    // ── Evidence visibility filter ────────────────────────────────────────────
+
+    const isCurrentHolder  = (request as any).assigned_to === emp.id;
+    const isRequester      = (request as any).requester_id === emp.id;
+    const isSuperAdmin     = (empRoles || []).some((r: any) => r.role === 'super_admin');
+    const isAuditReviewer  = (empRoles || []).some((r: any) => r.role === 'audit_reviewer');
+
+    const originCo2 = coMap.get((request as any).origin_company_id);
+    const destCo2   = coMap.get((request as any).destination_company_id);
+    const isCompanyCEO =
+      (originCo2 as any)?.ceo_employee_id === emp.id ||
+      (destCo2   as any)?.ceo_employee_id === emp.id;
+
+    const seesAll = isCurrentHolder || isSuperAdmin || isHoldingCEO || isCompanyCEO || isAuditReviewer;
+
+    let visibleEvidence = allEvidence || [];
+
+    if (!seesAll) {
+      const { data: lastInvolvement } = await service
+        .from('request_actions')
+        .select('created_at')
+        .eq('request_id', id)
+        .or(`actor_id.eq.${emp.id},to_person_id.eq.${emp.id}`)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (lastInvolvement) {
+        // Add 5-second buffer to handle timing issues between evidence upload and action creation
+        const cutoff = new Date(new Date((lastInvolvement as any).created_at).getTime() + 5000);
+        visibleEvidence = (allEvidence || []).filter((e: any) => {
+          // Always show viewer's own uploads
+          if (e.uploaded_by === emp.id) return true;
+          // Show other uploads up to cutoff
+          return new Date(e.created_at) <= cutoff;
+        });
+      } else if (isRequester) {
+        // Requester never got the request back — always see own uploads
+        visibleEvidence = (allEvidence || []).filter(
+          (e: any) => e.uploaded_by === emp.id
+        );
+      } else {
+        // Viewer never touched this request — no evidence
+        visibleEvidence = [];
+      }
+    }
+
+    const evidenceFiltered = !seesAll && visibleEvidence.length !== (allEvidence || []).length;
+
     // Enrich actions with person names
     const enrichedActions = actions.map((a: any) => ({
       ...a,
@@ -161,8 +210,8 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
       to_person:   a.to_person_id   ? empMap.get(a.to_person_id)   || null : null,
     }));
 
-    // Enrich evidence
-    const enrichedEvidence = (evidence || []).map((e: any) => ({
+    // Enrich visible evidence
+    const enrichedEvidence = visibleEvidence.map((e: any) => ({
       ...e,
       uploader: e.uploaded_by ? empMap.get(e.uploaded_by) || null : null,
     }));
@@ -172,6 +221,7 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
         request={request}
         actions={enrichedActions}
         evidence={enrichedEvidence}
+        evidenceFiltered={evidenceFiltered}
         currentEmployeeId={emp.id}
         requesterId={request.requester_id}
         requesterName={empMap.get(request.requester_id) || null}

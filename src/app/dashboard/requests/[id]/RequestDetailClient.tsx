@@ -118,6 +118,7 @@ interface Props {
   isHRHead: boolean;
   allCompanies: any[];
   allDepartments: any[];
+  evidenceFiltered?: boolean;
   // Onboarding
   isOnboardingParent?: boolean;
   isOnboardingChild?: boolean;
@@ -148,6 +149,7 @@ export default function RequestDetailClient({
   isHRHead,
   allCompanies,
   allDepartments,
+  evidenceFiltered = false,
   isOnboardingParent = false,
   isOnboardingChild = false,
   childRequests = [],
@@ -615,36 +617,49 @@ export default function RequestDetailClient({
           )}
 
           {/* 6. Evidence */}
-          {evidence.length > 0 && (
+          {(evidence.length > 0 || evidenceFiltered) && (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
               <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">
                 {isAr ? 'المستندات المرفقة' : 'Attached Documents'}
               </h2>
-              <ul className="flex flex-col gap-3">
-                {evidence.map((e: any) => {
-                  const sizeKB = e.file_size_bytes ? Math.ceil(e.file_size_bytes / 1024) : null;
-                  return (
-                    <li key={e.id} className="flex items-start gap-3 text-sm">
-                      <span className="text-lg mt-0.5">📎</span>
-                      <div className="flex-1 min-w-0">
-                        <a
-                          href={e.file_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-medium text-indigo-600 hover:underline break-all"
-                        >
-                          {e.file_name}
-                        </a>
-                        <div className="text-slate-400 text-xs mt-0.5 flex flex-wrap gap-2">
-                          {sizeKB !== null && <span>{sizeKB} KB</span>}
-                          {e.uploader && <span>{personName(e.uploader)}</span>}
-                          {e.created_at && <span>{formatDate(e.created_at, isAr)}</span>}
+              {evidence.length > 0 ? (
+                <ul className="flex flex-col gap-3">
+                  {evidence.map((e: any) => {
+                    const sizeKB = e.file_size_bytes ? Math.ceil(e.file_size_bytes / 1024) : null;
+                    return (
+                      <li key={e.id} className="flex items-start gap-3 text-sm">
+                        <span className="text-lg mt-0.5">📎</span>
+                        <div className="flex-1 min-w-0">
+                          <a
+                            href={e.file_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-medium text-indigo-600 hover:underline break-all"
+                          >
+                            {e.file_name}
+                          </a>
+                          <div className="text-slate-400 text-xs mt-0.5 flex flex-wrap gap-2">
+                            {sizeKB !== null && <span>{sizeKB} KB</span>}
+                            {e.uploader && <span>{personName(e.uploader)}</span>}
+                            {e.created_at && <span>{formatDate(e.created_at, isAr)}</span>}
+                          </div>
                         </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="text-sm text-slate-400">
+                  {isAr ? 'لا توجد مرفقات مرئية لك' : 'No attachments visible to you'}
+                </p>
+              )}
+              {evidenceFiltered && (
+                <p className="mt-3 text-xs text-slate-400 italic">
+                  📎 {isAr
+                    ? 'تظهر لك المرفقات حتى آخر مرة كان الطلب لديك'
+                    : 'You see attachments up to your last involvement'}
+                </p>
+              )}
             </div>
           )}
 
