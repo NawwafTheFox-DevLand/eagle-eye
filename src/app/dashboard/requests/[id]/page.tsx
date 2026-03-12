@@ -85,7 +85,7 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
       deptIds.length > 0
         ? service.from('departments').select('id, name_ar, name_en, code, head_employee_id').in('id', deptIds)
         : Promise.resolve({ data: [] as any[] }),
-      service.from('evidence').select('id, file_name, file_url, file_type, file_size_bytes, uploaded_by, created_at').eq('request_id', id).order('created_at', { ascending: true }),
+      service.from('evidence').select('id, file_name, file_url, file_type, file_size, uploaded_by, created_at').eq('request_id', id).order('created_at', { ascending: true }),
       service.from('companies').select('id, name_ar, name_en, code, is_holding').order('name_ar'),
       service.from('departments').select('id, name_ar, name_en, code, company_id').eq('is_active', true).order('name_ar'),
       service.from('user_roles').select('role, company_id').eq('employee_id', emp.id).eq('is_active', true),

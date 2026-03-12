@@ -1,10 +1,51 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useState, useTransition, useEffect } from 'react';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { useRouter } from 'next/navigation';
 import RequestActions from '@/components/requests/RequestActions';
 import { cancelOnboarding } from '@/app/actions/onboarding';
+
+// ─── Attachment preview helpers ────────────────────────────────────────────────
+
+function getFileType(fileName: string): 'image' | 'pdf' | 'other' {
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return 'image';
+  if (ext === 'pdf') return 'pdf';
+  return 'other';
+}
+
+function getFileIcon(fileName: string): string {
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  if (['doc', 'docx'].includes(ext)) return '📄';
+  if (['xls', 'xlsx'].includes(ext)) return '📊';
+  if (ext === 'txt') return '📝';
+  return '📎';
+}
+
+function PdfPreview({ url, isAr }: { url: string; isAr: boolean }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="text-xs px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100"
+      >
+        {expanded
+          ? (isAr ? 'إخفاء المعاينة' : 'Hide Preview')
+          : (isAr ? 'عرض المعاينة' : 'Show Preview')
+        }
+      </button>
+      {expanded && (
+        <iframe
+          src={url}
+          className="w-full h-[400px] rounded-lg border border-slate-200 mt-2"
+          title="PDF Preview"
+        />
+      )}
+    </div>
+  );
+}
 
 // ─── Label maps ────────────────────────────────────────────────────────────────
 
@@ -164,6 +205,17 @@ export default function RequestDetailClient({
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [cancelPending, startCancelTransition] = useTransition();
   const [cancelError, setCancelError] = useState('');
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightboxUrl(null);
+    };
+    if (lightboxUrl) {
+      window.addEventListener('keydown', handleEsc);
+      return () => window.removeEventListener('keydown', handleEsc);
+    }
+  }, [lightboxUrl]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -623,31 +675,54 @@ export default function RequestDetailClient({
                 {isAr ? 'المستندات المرفقة' : 'Attached Documents'}
               </h2>
               {evidence.length > 0 ? (
-                <ul className="flex flex-col gap-3">
+                <div className="flex flex-col gap-3">
                   {evidence.map((e: any) => {
-                    const sizeKB = e.file_size_bytes ? Math.ceil(e.file_size_bytes / 1024) : null;
+                    const fileType = getFileType(e.file_name);
+                    const sizeKB = e.file_size ? Math.ceil(e.file_size / 1024) : null;
                     return (
-                      <li key={e.id} className="flex items-start gap-3 text-sm">
-                        <span className="text-lg mt-0.5">📎</span>
-                        <div className="flex-1 min-w-0">
+                      <div key={e.id} className="border border-slate-100 rounded-xl p-3 space-y-2">
+                        {/* Header row: icon + name + meta + download */}
+                        <div className="flex items-center gap-3">
+                          <span className="text-lg shrink-0">
+                            {fileType === 'image' ? '🖼️' : fileType === 'pdf' ? '📕' : getFileIcon(e.file_name)}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-800 truncate">{e.file_name}</p>
+                            <div className="text-xs text-slate-400 flex flex-wrap gap-2">
+                              {sizeKB !== null && <span>{sizeKB} KB</span>}
+                              {e.uploader && <span>{personName(e.uploader)}</span>}
+                              {e.created_at && <span>{formatDate(e.created_at, isAr)}</span>}
+                            </div>
+                          </div>
                           <a
                             href={e.file_url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="font-medium text-indigo-600 hover:underline break-all"
+                            className="text-xs px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 whitespace-nowrap shrink-0"
                           >
-                            {e.file_name}
+                            {isAr ? 'تحميل' : 'Download'}
                           </a>
-                          <div className="text-slate-400 text-xs mt-0.5 flex flex-wrap gap-2">
-                            {sizeKB !== null && <span>{sizeKB} KB</span>}
-                            {e.uploader && <span>{personName(e.uploader)}</span>}
-                            {e.created_at && <span>{formatDate(e.created_at, isAr)}</span>}
-                          </div>
                         </div>
-                      </li>
+
+                        {/* Preview area */}
+                        {fileType === 'image' && (
+                          <button onClick={() => setLightboxUrl(e.file_url)} className="block">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={e.file_url}
+                              alt={e.file_name}
+                              className="max-h-40 rounded-lg border border-slate-200 hover:opacity-90 transition-opacity cursor-pointer"
+                            />
+                          </button>
+                        )}
+
+                        {fileType === 'pdf' && (
+                          <PdfPreview url={e.file_url} isAr={isAr} />
+                        )}
+                      </div>
                     );
                   })}
-                </ul>
+                </div>
               ) : (
                 <p className="text-sm text-slate-400">
                   {isAr ? 'لا توجد مرفقات مرئية لك' : 'No attachments visible to you'}
@@ -826,6 +901,35 @@ export default function RequestDetailClient({
 
         </div>
       </div>
+
+      {/* ── Image lightbox ── */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <div className="relative max-w-[90vw] max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <button
+              onClick={() => setLightboxUrl(null)}
+              className="absolute -top-3 -right-3 w-8 h-8 bg-white rounded-full flex items-center justify-center shadow-lg text-slate-600 hover:text-slate-900 z-10"
+            >
+              ✕
+            </button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={lightboxUrl} alt="Preview" className="max-w-full max-h-[85vh] object-contain rounded-xl" />
+            <div className="flex justify-center mt-3">
+              <a
+                href={lightboxUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2 bg-white rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100"
+              >
+                {isAr ? '⬇️ تحميل' : '⬇️ Download'}
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
