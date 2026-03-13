@@ -131,6 +131,10 @@ function formatDate(dateStr: string, isAr: boolean): string {
   });
 }
 
+// ─── Internal metadata keys (UUIDs used for routing — never show to users) ─────
+
+const HIDDEN_METADATA_KEYS = new Set(['target_employee_id', 'target_department_id', 'direct_manager_id']);
+
 // ─── Props ─────────────────────────────────────────────────────────────────────
 
 const TASK_LABELS: Record<string, { ar: string; en: string; icon: string }> = {
@@ -652,18 +656,21 @@ export default function RequestDetailClient({
               </dl>
             </div>
           )}
-          {!isOnboardingParent && !isOnboardingChild && request.metadata && Object.keys(request.metadata).length > 0 && (
+          {!isOnboardingParent && !isOnboardingChild && request.metadata &&
+           Object.keys(request.metadata).some(k => !HIDDEN_METADATA_KEYS.has(k)) && (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
               <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">
                 {isAr ? 'بيانات إضافية' : 'Additional Details'}
               </h2>
               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
-                {Object.entries(request.metadata as Record<string, string>).map(([k, v]) => (
-                  <div key={k}>
-                    <dt className="text-slate-500 mb-0.5 capitalize">{k.replace(/_/g, ' ')}</dt>
-                    <dd className="font-medium text-slate-800">{String(v)}</dd>
-                  </div>
-                ))}
+                {Object.entries(request.metadata as Record<string, string>)
+                  .filter(([k]) => !HIDDEN_METADATA_KEYS.has(k))
+                  .map(([k, v]) => (
+                    <div key={k}>
+                      <dt className="text-slate-500 mb-0.5 capitalize">{k.replace(/_/g, ' ')}</dt>
+                      <dd className="font-medium text-slate-800">{String(v)}</dd>
+                    </div>
+                  ))}
               </dl>
             </div>
           )}

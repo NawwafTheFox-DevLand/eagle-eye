@@ -1,5 +1,6 @@
 'use client';
 import { useState, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -53,11 +54,14 @@ function relativeTime(dateStr: string, isAr: boolean): string {
 
 // ── Scope KPI card ────────────────────────────────────────────────────────────
 
-function ScopeKPI({ icon, titleAr, titleEn, value, borderColor, isAr }: {
-  icon: string; titleAr: string; titleEn: string; value: string | number; borderColor: string; isAr: boolean;
+function ScopeKPI({ icon, titleAr, titleEn, value, borderColor, isAr, onClick }: {
+  icon: string; titleAr: string; titleEn: string; value: string | number; borderColor: string; isAr: boolean; onClick?: () => void;
 }) {
   return (
-    <div className={`bg-white rounded-2xl border border-slate-100 shadow-sm p-5 border-l-4 ${borderColor}`}>
+    <div
+      className={`bg-white rounded-2xl border border-slate-100 shadow-sm p-5 border-l-4 ${borderColor} ${onClick ? 'cursor-pointer hover:shadow-md hover:border-blue-200 transition-all' : ''}`}
+      onClick={onClick}
+    >
       <div className="flex items-start justify-between">
         <div>
           <p className="text-xs font-medium text-slate-500 mb-1">{isAr ? titleAr : titleEn}</p>
@@ -110,6 +114,7 @@ interface Props {
 export default function DashboardClient({ employee, level, personalKPIs, scopeData }: Props) {
   const { lang } = useLanguage();
   const isAr = lang === 'ar';
+  const router = useRouter();
 
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedDept, setSelectedDept]       = useState('');
@@ -430,6 +435,7 @@ export default function DashboardClient({ employee, level, personalKPIs, scopeDa
               icon: '📋',
               border: 'border-l-blue-500',
               text:   'text-blue-700',
+              href:  '/dashboard/requests?tab=submitted',
             },
             {
               label: { ar: 'صندوق الوارد', en: 'My Inbox' },
@@ -437,6 +443,7 @@ export default function DashboardClient({ employee, level, personalKPIs, scopeDa
               icon: '📥',
               border: 'border-l-red-500',
               text:   'text-red-700',
+              href:  '/dashboard/inbox',
             },
             {
               label: { ar: 'مكتملة', en: 'Completed' },
@@ -444,6 +451,7 @@ export default function DashboardClient({ employee, level, personalKPIs, scopeDa
               icon: '✅',
               border: 'border-l-emerald-500',
               text:   'text-emerald-700',
+              href:  '/dashboard/requests?tab=all&status=completed',
             },
             {
               label: { ar: 'مرفوضة', en: 'Rejected' },
@@ -451,11 +459,13 @@ export default function DashboardClient({ employee, level, personalKPIs, scopeDa
               icon: '❌',
               border: 'border-l-red-400',
               text:   'text-red-600',
+              href:  '/dashboard/requests?tab=all&status=rejected',
             },
           ] as const).map((card, i) => (
             <div
               key={i}
-              className={`bg-white rounded-2xl border border-slate-100 shadow-sm p-5 border-l-4 ${card.border}`}
+              onClick={() => router.push(card.href)}
+              className={`bg-white rounded-2xl border border-slate-100 shadow-sm p-5 border-l-4 ${card.border} cursor-pointer hover:shadow-md hover:border-blue-200 transition-all`}
             >
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-lg">{card.icon}</span>
@@ -479,10 +489,10 @@ export default function DashboardClient({ employee, level, personalKPIs, scopeDa
               📊 {isAr ? 'أداء النطاق' : 'Scope Performance'}
             </h2>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <ScopeKPI icon="📤" titleAr="طلبات صادرة"    titleEn="Created Here"          value={scopeKPIs.createdHere}         borderColor="border-l-blue-500"   isAr={isAr} />
-              <ScopeKPI icon="✅" titleAr="واردة مكتملة"   titleEn="Completed Here"         value={scopeKPIs.completedHere}       borderColor="border-l-emerald-500" isAr={isAr} />
-              <ScopeKPI icon="⏳" titleAr="قيد المعالجة"   titleEn="In Progress"            value={scopeKPIs.inProgress}          borderColor="border-l-amber-500"  isAr={isAr} />
-              <ScopeKPI icon="❓" titleAr="بانتظار توضيح"  titleEn="Pending Clarification"  value={scopeKPIs.pendingClarification} borderColor="border-l-orange-500" isAr={isAr} />
+              <ScopeKPI icon="📤" titleAr="طلبات صادرة"    titleEn="Created Here"          value={scopeKPIs.createdHere}          borderColor="border-l-blue-500"    isAr={isAr} onClick={() => router.push('/dashboard/requests')} />
+              <ScopeKPI icon="✅" titleAr="واردة مكتملة"   titleEn="Completed Here"         value={scopeKPIs.completedHere}        borderColor="border-l-emerald-500"  isAr={isAr} onClick={() => router.push('/dashboard/requests?status=completed')} />
+              <ScopeKPI icon="⏳" titleAr="قيد المعالجة"   titleEn="In Progress"            value={scopeKPIs.inProgress}           borderColor="border-l-amber-500"   isAr={isAr} onClick={() => router.push('/dashboard/requests?status=in_progress')} />
+              <ScopeKPI icon="❓" titleAr="بانتظار توضيح"  titleEn="Pending Clarification"  value={scopeKPIs.pendingClarification} borderColor="border-l-orange-500"  isAr={isAr} onClick={() => router.push('/dashboard/requests?status=pending_clarification')} />
             </div>
           </div>
 
@@ -492,10 +502,10 @@ export default function DashboardClient({ employee, level, personalKPIs, scopeDa
               🔄 {isAr ? 'إجراءات النطاق' : 'Scope Actions'}
             </h2>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <ScopeKPI icon="↗️" titleAr="تم تحويلها"    titleEn="Forwarded"         value={scopeKPIs.forwarded}      borderColor="border-l-blue-400"   isAr={isAr} />
-              <ScopeKPI icon="👤" titleAr="تم تعيينها"    titleEn="Assigned"          value={scopeKPIs.assigned}       borderColor="border-l-indigo-500" isAr={isAr} />
-              <ScopeKPI icon="↩️" titleAr="تم إرجاعها"   titleEn="Returned"          value={scopeKPIs.returned}       borderColor="border-l-amber-400"  isAr={isAr} />
-              <ScopeKPI icon="💬" titleAr="طلبات توضيح"   titleEn="Clarification Sent" value={scopeKPIs.askedRequester} borderColor="border-l-orange-400" isAr={isAr} />
+              <ScopeKPI icon="↗️" titleAr="تم تحويلها"    titleEn="Forwarded"          value={scopeKPIs.forwarded}       borderColor="border-l-blue-400"   isAr={isAr} onClick={() => router.push('/dashboard/requests?tab=forwarded')} />
+              <ScopeKPI icon="👤" titleAr="تم تعيينها"    titleEn="Assigned"           value={scopeKPIs.assigned}        borderColor="border-l-indigo-500" isAr={isAr} onClick={() => router.push('/dashboard/requests?tab=assigned')} />
+              <ScopeKPI icon="↩️" titleAr="تم إرجاعها"   titleEn="Returned"           value={scopeKPIs.returned}        borderColor="border-l-amber-400"  isAr={isAr} onClick={() => router.push('/dashboard/requests?tab=returned')} />
+              <ScopeKPI icon="💬" titleAr="طلبات توضيح"   titleEn="Clarification Sent" value={scopeKPIs.askedRequester}  borderColor="border-l-orange-400" isAr={isAr} onClick={() => router.push('/dashboard/requests')} />
             </div>
           </div>
 
@@ -505,9 +515,9 @@ export default function DashboardClient({ employee, level, personalKPIs, scopeDa
               🏁 {isAr ? 'نتائج النطاق' : 'Scope Outcomes'}
             </h2>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <ScopeKPI icon="✅" titleAr="أنجزها النطاق"   titleEn="Completed by Scope" value={scopeKPIs.completedByScope} borderColor="border-l-emerald-500" isAr={isAr} />
-              <ScopeKPI icon="❌" titleAr="رفضها النطاق"    titleEn="Rejected by Scope"  value={scopeKPIs.rejectedByScope}  borderColor="border-l-red-500"    isAr={isAr} />
-              <ScopeKPI icon="⏱️" titleAr="متوسط المدة"    titleEn="Avg Cycle Time"     value={scopeKPIs.avgCycleTime}     borderColor="border-l-cyan-500"   isAr={isAr} />
+              <ScopeKPI icon="✅" titleAr="أنجزها النطاق"   titleEn="Completed by Scope" value={scopeKPIs.completedByScope} borderColor="border-l-emerald-500" isAr={isAr} onClick={() => router.push('/dashboard/requests?status=completed')} />
+              <ScopeKPI icon="❌" titleAr="رفضها النطاق"    titleEn="Rejected by Scope"  value={scopeKPIs.rejectedByScope}  borderColor="border-l-red-500"    isAr={isAr} onClick={() => router.push('/dashboard/requests?status=rejected')} />
+              <ScopeKPI icon="⏱️" titleAr="متوسط المدة"    titleEn="Avg Cycle Time"     value={scopeKPIs.avgCycleTime}     borderColor="border-l-cyan-500"   isAr={isAr} onClick={() => router.push('/dashboard/requests')} />
               <ScopeKPI
                 icon="📈"
                 titleAr="معدل الإنجاز"
@@ -519,6 +529,7 @@ export default function DashboardClient({ employee, level, personalKPIs, scopeDa
                   : 'border-l-red-500'
                 }
                 isAr={isAr}
+                onClick={() => router.push('/dashboard/requests')}
               />
             </div>
           </div>

@@ -1,5 +1,6 @@
 'use client';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { exportToCSV } from '@/lib/utils/export';
@@ -47,39 +48,104 @@ const TYPE_LABELS: Record<string, { ar: string; en: string }> = {
   create_position:       { ar: 'إنشاء وظيفة',       en: 'Create Position'    },
 };
 
-export default function RequestsClient({ requests }: { requests: any[] }) {
+const TABS = [
+  { key: 'all',       ar: 'الكل',          en: 'All'            },
+  { key: 'submitted', ar: 'صادرة',         en: 'My Submissions' },
+  { key: 'received',  ar: 'واردة',         en: 'Received'       },
+  { key: 'forwarded', ar: 'تم تحويلها',    en: 'Forwarded'      },
+  { key: 'returned',  ar: 'تم إرجاعها',    en: 'Returned'       },
+  { key: 'assigned',  ar: 'معينة',         en: 'Assigned by Me' },
+] as const;
+
+interface Props {
+  requests: any[];
+  currentEmployeeId: string;
+  myActions: { request_id: string; action: string }[];
+}
+
+export default function RequestsClient({ requests, currentEmployeeId, myActions }: Props) {
   const { lang } = useLanguage();
   const isAr = lang === 'ar';
-  const [statusFilter, setStatusFilter] = useState('');
+  const searchParams = useSearchParams();
+
+  const [activeTab,     setActiveTab]     = useState(searchParams.get('tab')    || 'all');
+  const [statusFilter,  setStatusFilter]  = useState(searchParams.get('status') || '');
   const [priorityFilter, setPriorityFilter] = useState('');
 
-  function handleExport() {
-    const filtered = requests.filter(r =>
-      (!statusFilter || r.status === statusFilter) &&
-      (!priorityFilter || r.priority === priorityFilter)
+  // ── Build action lookup maps ───────────────────────────────────────────────
+
+  const { actionsByRequest, receivedRequestIds } = useMemo(() => {
+    const byReq = new Map<string, Set<string>>();
+    myActions.forEach(a => {
+      if (!byReq.has(a.request_id)) byReq.set(a.request_id, new Set());
+      byReq.get(a.request_id)!.add(a.action);
+    });
+    // "received" = had any action other than submitted (i.e. the request came to me)
+    const received = new Set(
+      myActions.filter(a => a.action !== 'submitted').map(a => a.request_id)
     );
+    return { actionsByRequest: byReq, receivedRequestIds: received };
+  }, [myActions]);
+
+  // ── Tab filter ────────────────────────────────────────────────────────────
+
+  const filteredByTab = useMemo(() => {
+    switch (activeTab) {
+      case 'submitted': return requests.filter(r => r.requester_id === currentEmployeeId);
+      case 'received':  return requests.filter(r => receivedRequestIds.has(r.id));
+      case 'forwarded': return requests.filter(r => actionsByRequest.get(r.id)?.has('forwarded'));
+      case 'returned':  return requests.filter(r => actionsByRequest.get(r.id)?.has('returned'));
+      case 'assigned':  return requests.filter(r => actionsByRequest.get(r.id)?.has('assigned'));
+      default:          return requests;
+    }
+  }, [requests, activeTab, currentEmployeeId, actionsByRequest, receivedRequestIds]);
+
+  // ── Status/priority filter on top of tab filter ───────────────────────────
+
+  const filtered = useMemo(() =>
+    filteredByTab.filter(r =>
+      (!statusFilter  || r.status   === statusFilter)  &&
+      (!priorityFilter || r.priority === priorityFilter)
+    ),
+  [filteredByTab, statusFilter, priorityFilter]);
+
+  // ── Tab counts ────────────────────────────────────────────────────────────
+
+  const tabCounts = useMemo(() => ({
+    all:       requests.length,
+    submitted: requests.filter(r => r.requester_id === currentEmployeeId).length,
+    received:  requests.filter(r => receivedRequestIds.has(r.id)).length,
+    forwarded: requests.filter(r => actionsByRequest.get(r.id)?.has('forwarded')).length,
+    returned:  requests.filter(r => actionsByRequest.get(r.id)?.has('returned')).length,
+    assigned:  requests.filter(r => actionsByRequest.get(r.id)?.has('assigned')).length,
+  }), [requests, currentEmployeeId, actionsByRequest, receivedRequestIds]);
+
+  // ── Export ────────────────────────────────────────────────────────────────
+
+  function handleExport() {
     exportToCSV(filtered.map(r => ({
       [isAr ? 'رقم الطلب' : 'Number']: r.request_number || '',
-      [isAr ? 'الموضوع' : 'Subject']: r.subject || '',
-      [isAr ? 'النوع' : 'Type']: r.request_type || '',
-      [isAr ? 'الأولوية' : 'Priority']: r.priority || '',
-      [isAr ? 'الحالة' : 'Status']: r.status || '',
-      [isAr ? 'التاريخ' : 'Date']: r.created_at ? new Date(r.created_at).toLocaleDateString() : '',
+      [isAr ? 'الموضوع'   : 'Subject']: r.subject        || '',
+      [isAr ? 'النوع'     : 'Type']:    r.request_type   || '',
+      [isAr ? 'الأولوية'  : 'Priority']: r.priority      || '',
+      [isAr ? 'الحالة'    : 'Status']:  r.status         || '',
+      [isAr ? 'التاريخ'   : 'Date']:    r.created_at ? new Date(r.created_at).toLocaleDateString() : '',
     })), 'requests');
   }
 
-  const filtered = requests.filter(r =>
-    (!statusFilter || r.status === statusFilter) &&
-    (!priorityFilter || r.priority === priorityFilter)
-  );
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6 animate-fade-in">
+
+      {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">{isAr ? 'الطلبات' : 'Requests'}</h1>
           <p className="text-slate-500 text-sm mt-1">
-            {isAr ? `${filtered.length} من ${requests.length} طلب` : `${filtered.length} of ${requests.length} requests`}
+            {isAr
+              ? `${filtered.length} من ${filteredByTab.length} طلب`
+              : `${filtered.length} of ${filteredByTab.length} requests`}
           </p>
         </div>
         <div className="flex gap-2">
@@ -90,6 +156,30 @@ export default function RequestsClient({ requests }: { requests: any[] }) {
             {isAr ? '➕ طلب جديد' : '➕ New Request'}
           </Link>
         </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 bg-slate-100 rounded-xl p-1 overflow-x-auto">
+        {TABS.map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+              activeTab === tab.key
+                ? 'bg-white text-blue-700 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {isAr ? tab.ar : tab.en}
+            {tabCounts[tab.key] > 0 && (
+              <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${
+                activeTab === tab.key ? 'bg-blue-100 text-blue-700' : 'bg-slate-200 text-slate-500'
+              }`}>
+                {tabCounts[tab.key]}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       {/* Filters */}
@@ -131,7 +221,6 @@ export default function RequestsClient({ requests }: { requests: any[] }) {
         </div>
       ) : (
         <div className="card overflow-hidden">
-          {/* Table header */}
           <div className="hidden md:grid grid-cols-[2fr_1fr_1fr_1fr_1.5fr_1.5fr_auto] gap-3 px-5 py-3 bg-slate-50 border-b border-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wide">
             <span>{isAr ? 'الموضوع' : 'Subject'}</span>
             <span>{isAr ? 'النوع' : 'Type'}</span>

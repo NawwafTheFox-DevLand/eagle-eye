@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { Suspense } from 'react';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import RequestsClient from './RequestsClient';
 
@@ -55,20 +56,27 @@ export default async function RequestsPage() {
   const { data: rawRequests } = await query;
   const rows = rawRequests || [];
 
-  if (rows.length === 0) return <RequestsClient requests={[]} />;
+  if (rows.length === 0) {
+    return (
+      <Suspense>
+        <RequestsClient requests={[]} currentEmployeeId={emp.id} myActions={[]} />
+      </Suspense>
+    );
+  }
 
   const requesterIds = [...new Set(rows.map(r => r.requester_id).filter(Boolean))];
   const assignedIds  = [...new Set(rows.map(r => r.assigned_to).filter(Boolean))];
   const companyIds   = [...new Set(rows.map(r => r.origin_company_id).filter(Boolean))];
   const allPersonIds = [...new Set([...requesterIds, ...assignedIds])] as string[];
 
-  const [{ data: persons }, { data: cos }] = await Promise.all([
+  const [{ data: persons }, { data: cos }, { data: rawMyActions }] = await Promise.all([
     allPersonIds.length > 0
       ? service.from('employees').select('id, full_name_ar, full_name_en').in('id', allPersonIds)
       : Promise.resolve({ data: [] as any[] }),
     companyIds.length > 0
       ? service.from('companies').select('id, name_ar, name_en').in('id', companyIds)
       : Promise.resolve({ data: [] as any[] }),
+    service.from('request_actions').select('request_id, action').eq('actor_id', emp.id),
   ]);
 
   const empMap = new Map((persons || []).map(p => [p.id, p]));
@@ -84,5 +92,9 @@ export default async function RequestsPage() {
     company_name_en:   coMap.get(r.origin_company_id)?.name_en ?? null,
   }));
 
-  return <RequestsClient requests={requests} />;
+  return (
+    <Suspense>
+      <RequestsClient requests={requests} currentEmployeeId={emp.id} myActions={rawMyActions || []} />
+    </Suspense>
+  );
 }
