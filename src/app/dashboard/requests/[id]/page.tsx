@@ -202,6 +202,23 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
 
     const evidenceFiltered = !seesAll && visibleEvidence.length !== (allEvidence || []).length;
 
+    console.log('DEBUG EVIDENCE:', {
+      requestId: id,
+      allEvidenceCount: (allEvidence || []).length,
+      allEvidenceRaw: allEvidence,
+      visibleEvidenceCount: visibleEvidence.length,
+      seesAll,
+      isCurrentHolder,
+      isRequester,
+      isSuperAdmin,
+      isHoldingCEO,
+      isCompanyCEO,
+      isAuditReviewer,
+      empId: emp.id,
+      assignedTo: (request as any).assigned_to,
+      requesterId: (request as any).requester_id,
+    });
+
     // Enrich actions with person names
     const enrichedActions = actions.map((a: any) => ({
       ...a,
