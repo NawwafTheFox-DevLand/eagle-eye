@@ -14,6 +14,21 @@ interface Config {
   icon: string | null;
 }
 
+interface CustomType {
+  id: string;
+  code: string;
+  name_ar: string;
+  name_en: string;
+  description_ar: string | null;
+  description_en: string | null;
+  icon: string | null;
+  flow_mode: 'free' | 'fixed';
+  custom_fields: any[] | null;
+  requires_ceo: boolean;
+  requires_hr: boolean;
+  requires_finance: boolean;
+}
+
 interface Props {
   configs: Config[];
   companies: { id: string; name_ar: string; name_en: string; code: string }[];
@@ -26,6 +41,7 @@ interface Props {
     full_name_en: string | null;
     company: any;
   };
+  customTypes?: CustomType[];
 }
 
 const PRIORITY_OPTIONS = [
@@ -118,7 +134,7 @@ function FieldLabel({ ar, en, required }: { ar: string; en: string; required?: b
 const INPUT_CLS = 'w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition-all bg-white';
 const READONLY_CLS = 'w-full border border-slate-100 rounded-xl px-4 py-2.5 text-sm text-slate-500 bg-slate-50';
 
-export default function NewRequestForm({ configs, companies, departments, employee }: Props) {
+export default function NewRequestForm({ configs, companies, departments, employee, customTypes = [] }: Props) {
   const { lang } = useLanguage();
   const isAr = lang === 'ar';
   const router = useRouter();
@@ -157,6 +173,10 @@ export default function NewRequestForm({ configs, companies, departments, employ
   const [leaveEnd, setLeaveEnd] = useState('');
   const [meta, setMeta] = useState<Record<string, string>>({});
 
+  // Custom type state
+  const [selectedCustomType, setSelectedCustomType] = useState<CustomType | null>(null);
+  const [customFieldsData, setCustomFieldsData] = useState<Record<string, string>>({});
+
   // Onboarding: employees in the selected target department
   const [onboardingDeptEmployees, setOnboardingDeptEmployees] = useState<any[]>([]);
 
@@ -189,6 +209,8 @@ export default function NewRequestForm({ configs, companies, departments, employ
 
   function handleTypeSelect(requestType: string) {
     setSelectedType(requestType);
+    setSelectedCustomType(null);
+    setCustomFieldsData({});
     const dcfg = DEST_CONFIG[requestType] || { co: 'all', dept: 'choose' };
     setDestCompanyId(dcfg.co === 'own' ? (employee.company_id || '') : '');
     setDestDeptId(dcfg.dept === 'own' ? (employee.department_id || '') : '');
@@ -200,9 +222,24 @@ export default function NewRequestForm({ configs, companies, departments, employ
     setError('');
   }
 
+  function handleCustomTypeSelect(ct: CustomType) {
+    setSelectedCustomType(ct);
+    setSelectedType('custom_' + ct.id);
+    setCustomFieldsData({});
+    // Free flow: user picks destination; Fixed: no destination needed
+    setDestCompanyId('');
+    setDestDeptId('');
+    setAmount(''); setCurrency('SAR'); setPayee(''); setCostCenter('');
+    setLeaveType('annual'); setLeaveStart(''); setLeaveEnd('');
+    setMeta({ custom_type_id: ct.id });
+    setTargetEmployee(''); setDeptEmployees([]);
+    setStep(2);
+    setError('');
+  }
+
   function buildFormData(): FormData {
     const fd = new FormData();
-    fd.append('request_type', selectedType);
+    fd.append('request_type', selectedCustomType ? 'general_internal' : selectedType);
     fd.append('subject', subject);
     fd.append('description', description);
     fd.append('priority', priority);
@@ -215,7 +252,13 @@ export default function NewRequestForm({ configs, companies, departments, employ
     if (leaveType)   fd.append('leave_type', leaveType);
     if (leaveStart)  fd.append('leave_start_date', leaveStart);
     if (leaveEnd)    fd.append('leave_end_date', leaveEnd);
-    if (Object.keys(meta).length > 0) fd.append('metadata', JSON.stringify(meta));
+    // Merge meta with custom type data
+    const fullMeta: Record<string, any> = { ...meta };
+    if (selectedCustomType) {
+      fullMeta.custom_type_id = selectedCustomType.id;
+      fullMeta.custom_fields_data = customFieldsData;
+    }
+    if (Object.keys(fullMeta).length > 0) fd.append('metadata', JSON.stringify(fullMeta));
     if (targetEmployee) fd.append('target_employee_id', targetEmployee);
     return fd;
   }
@@ -228,6 +271,22 @@ export default function NewRequestForm({ configs, companies, departments, employ
     if (!description.trim()) {
       setError(isAr ? 'الوصف مطلوب' : 'Description is required');
       return false;
+    }
+    // Custom type validation
+    if (selectedCustomType) {
+      if (selectedCustomType.flow_mode === 'free' && !destDeptId) {
+        setError(isAr ? 'القسم المستقبل مطلوب' : 'Destination department is required');
+        return false;
+      }
+      const fields = selectedCustomType.custom_fields || [];
+      for (const f of fields) {
+        if (f.required && !customFieldsData[f.key]?.trim()) {
+          setError(isAr ? `الحقل "${f.label_ar}" مطلوب` : `Field "${f.label_en}" is required`);
+          return false;
+        }
+      }
+      setError('');
+      return true;
     }
     if (cfg.co !== 'none' && cfg.co !== 'own' && !destCompanyId) {
       setError(isAr ? 'الشركة المستقبلة مطلوبة' : 'Destination company is required');
@@ -314,35 +373,69 @@ export default function NewRequestForm({ configs, companies, departments, employ
 
       {/* ── STEP 1: Type Selection ── */}
       {step === 1 && (
-        <div>
-          {configs.length === 0 ? (
+        <div className="space-y-5">
+          {configs.length === 0 && customTypes.length === 0 ? (
             <div className="text-center py-12 text-slate-500">
               <p className="text-4xl mb-3">📋</p>
               <p>لا يوجد أنواع طلبات متاحة لمستواك الوظيفي</p>
               <p className="text-sm mt-1 text-slate-400">No request types available for your role</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {configs.map(config => (
-                <button
-                  key={config.id}
-                  onClick={() => handleTypeSelect(config.request_type)}
-                  className="flex flex-col items-center gap-3 p-5 rounded-xl border-2 border-slate-200 hover:border-blue-400 hover:bg-blue-50 transition-all text-center group cursor-pointer"
-                >
-                  <span className="text-4xl">{config.icon || '📄'}</span>
-                  <div>
-                    <p className="font-semibold text-slate-800 text-sm group-hover:text-blue-700 leading-snug">
-                      {isAr ? config.name_ar : config.name_en}
-                    </p>
-                    {typeLabel && (
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        {isAr ? TYPE_LABELS[config.request_type]?.en : TYPE_LABELS[config.request_type]?.ar}
+            <>
+              {configs.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {configs.map(config => (
+                    <button
+                      key={config.id}
+                      onClick={() => handleTypeSelect(config.request_type)}
+                      className="flex flex-col items-center gap-3 p-5 rounded-xl border-2 border-slate-200 hover:border-blue-400 hover:bg-blue-50 transition-all text-center group cursor-pointer"
+                    >
+                      <span className="text-4xl">{config.icon || '📄'}</span>
+                      <div>
+                        <p className="font-semibold text-slate-800 text-sm group-hover:text-blue-700 leading-snug">
+                          {isAr ? config.name_ar : config.name_en}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {customTypes.length > 0 && (
+                <div>
+                  {configs.length > 0 && (
+                    <div className="flex items-center gap-3 my-4">
+                      <div className="flex-1 h-px bg-slate-200" />
+                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                        {isAr ? 'أنواع مخصصة' : 'Custom Types'}
                       </p>
-                    )}
+                      <div className="flex-1 h-px bg-slate-200" />
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {customTypes.map(ct => (
+                      <button
+                        key={ct.id}
+                        onClick={() => handleCustomTypeSelect(ct)}
+                        className="flex flex-col items-center gap-3 p-5 rounded-xl border-2 border-violet-200 hover:border-violet-400 hover:bg-violet-50 transition-all text-center group cursor-pointer"
+                      >
+                        <span className="text-4xl">{ct.icon || '📝'}</span>
+                        <div>
+                          <p className="font-semibold text-slate-800 text-sm group-hover:text-violet-700 leading-snug">
+                            {isAr ? ct.name_ar : ct.name_en}
+                          </p>
+                          <p className="text-[10px] text-violet-400 mt-0.5 font-mono">{ct.code}</p>
+                          {(isAr ? ct.description_ar : ct.description_en) && (
+                            <p className="text-[11px] text-slate-400 mt-1 line-clamp-2">
+                              {isAr ? ct.description_ar : ct.description_en}
+                            </p>
+                          )}
+                        </div>
+                      </button>
+                    ))}
                   </div>
-                </button>
-              ))}
-            </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
@@ -358,12 +451,22 @@ export default function NewRequestForm({ configs, companies, departments, employ
             >
               &#8592;
             </button>
-            <span className="text-2xl">{selectedConfig?.icon || '📄'}</span>
+            <span className="text-2xl">
+              {selectedCustomType ? (selectedCustomType.icon || '📝') : (selectedConfig?.icon || '📄')}
+            </span>
             <div>
               <p className="font-semibold text-slate-900 text-sm">
-                {selectedConfig ? (isAr ? selectedConfig.name_ar : selectedConfig.name_en) : selectedType}
+                {selectedCustomType
+                  ? (isAr ? selectedCustomType.name_ar : selectedCustomType.name_en)
+                  : selectedConfig
+                    ? (isAr ? selectedConfig.name_ar : selectedConfig.name_en)
+                    : selectedType}
               </p>
-              <p className="text-xs text-slate-400">{isAr ? 'نوع الطلب المحدد' : 'Selected request type'}</p>
+              <p className="text-xs text-slate-400">
+                {selectedCustomType
+                  ? (isAr ? `مخصص — ${selectedCustomType.flow_mode === 'fixed' ? 'مسار ثابت' : 'مسار حر'}` : `Custom — ${selectedCustomType.flow_mode === 'fixed' ? 'Fixed path' : 'Free flow'}`)
+                  : (isAr ? 'نوع الطلب المحدد' : 'Selected request type')}
+              </p>
             </div>
           </div>
 
@@ -403,8 +506,96 @@ export default function NewRequestForm({ configs, companies, departments, employ
             </select>
           </div>
 
+          {/* ── Custom Type Fields ── */}
+          {selectedCustomType && (
+            <>
+              {/* Fixed path info banner */}
+              {selectedCustomType.flow_mode === 'fixed' && (
+                <div className="bg-violet-50 border border-violet-200 rounded-xl px-4 py-3">
+                  <p className="text-xs font-semibold text-violet-700 mb-1">
+                    {isAr ? 'مسار ثابت' : 'Fixed Path'}
+                  </p>
+                  <p className="text-xs text-violet-600">
+                    {isAr
+                      ? 'سيتم توجيه هذا الطلب تلقائياً عبر الخطوات المحددة مسبقاً'
+                      : 'This request will be routed automatically through predefined steps'}
+                  </p>
+                </div>
+              )}
+
+              {/* Free flow: pick destination */}
+              {selectedCustomType.flow_mode === 'free' && (
+                <div className="space-y-4">
+                  <div>
+                    <FieldLabel ar="الشركة المستقبلة" en="Dest. Company" />
+                    <select value={destCompanyId}
+                      onChange={e => { setDestCompanyId(e.target.value); setDestDeptId(''); }}
+                      className={INPUT_CLS}>
+                      <option value="">{isAr ? '-- اختر الشركة --' : '-- Select company --'}</option>
+                      {companies.map(c => (
+                        <option key={c.id} value={c.id}>{isAr ? c.name_ar : c.name_en}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <FieldLabel ar="القسم المستقبل" en="Dest. Department" required />
+                    <select value={destDeptId} onChange={e => setDestDeptId(e.target.value)}
+                      disabled={!destCompanyId}
+                      className={`${INPUT_CLS} disabled:opacity-50 disabled:cursor-not-allowed`}>
+                      <option value="">{isAr ? '-- اختر القسم --' : '-- Select department --'}</option>
+                      {departments.filter(d => d.company_id === (destCompanyId || employee.company_id)).map(d => (
+                        <option key={d.id} value={d.id}>{isAr ? d.name_ar : d.name_en}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* Custom fields */}
+              {(selectedCustomType.custom_fields || []).length > 0 && (
+                <div className="space-y-4 border-t border-violet-100 pt-4">
+                  <p className="text-xs font-semibold text-violet-600 uppercase tracking-wide">
+                    {isAr ? 'حقول مخصصة' : 'Custom Fields'}
+                  </p>
+                  {(selectedCustomType.custom_fields || []).map((field: any) => (
+                    <div key={field.key}>
+                      <FieldLabel
+                        ar={field.label_ar}
+                        en={field.label_en}
+                        required={field.required}
+                      />
+                      {field.type === 'textarea' ? (
+                        <textarea rows={3} className={`${INPUT_CLS} resize-none`}
+                          value={customFieldsData[field.key] || ''}
+                          onChange={e => setCustomFieldsData(prev => ({ ...prev, [field.key]: e.target.value }))} />
+                      ) : field.type === 'select' ? (
+                        <select className={INPUT_CLS}
+                          value={customFieldsData[field.key] || ''}
+                          onChange={e => setCustomFieldsData(prev => ({ ...prev, [field.key]: e.target.value }))}>
+                          <option value="">{isAr ? '-- اختر --' : '-- Select --'}</option>
+                          {(field.options || []).map((opt: any) => (
+                            <option key={opt.value} value={opt.value}>
+                              {isAr ? opt.label_ar : opt.label_en}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'}
+                          className={INPUT_CLS}
+                          value={customFieldsData[field.key] || ''}
+                          onChange={e => setCustomFieldsData(prev => ({ ...prev, [field.key]: e.target.value }))}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
           {/* ── Fund Disbursement Fields ── */}
-          {selectedType === 'fund_disbursement' && (
+          {!selectedCustomType && selectedType === 'fund_disbursement' && (
             <div className="space-y-4 border-t border-blue-100 pt-4">
               <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide">
                 {isAr ? 'تفاصيل الصرف المالي' : 'Payment Details'}
@@ -649,7 +840,7 @@ export default function NewRequestForm({ configs, companies, departments, employ
           )}
 
           {/* ── Destination Company ── */}
-          {cfg.co !== 'none' && (
+          {!selectedCustomType && cfg.co !== 'none' && (
             <div>
               <FieldLabel ar="الشركة المستقبلة" en="Dest. Company" required={cfg.co !== 'own'} />
               {cfg.co === 'own' ? (
@@ -672,7 +863,7 @@ export default function NewRequestForm({ configs, companies, departments, employ
           )}
 
           {/* ── Destination Department ── */}
-          {cfg.dept !== 'none' && (
+          {!selectedCustomType && cfg.dept !== 'none' && (
             <div>
               <FieldLabel ar="القسم المستقبل" en="Dest. Department" required={cfg.dept !== 'own'} />
               {cfg.dept === 'own' ? (
@@ -703,7 +894,7 @@ export default function NewRequestForm({ configs, companies, departments, employ
           )}
 
           {/* ── Send To (optional) ── */}
-          {destDeptId && (
+          {!selectedCustomType && destDeptId && (
             <div>
               <FieldLabel ar="إرسال إلى (اختياري)" en="Send To (optional)" />
               <select
@@ -776,8 +967,10 @@ export default function NewRequestForm({ configs, companies, departments, employ
             {[
               {
                 label: isAr ? 'النوع' : 'Type',
-                value: selectedConfig ? (isAr ? selectedConfig.name_ar : selectedConfig.name_en) : selectedType,
-                icon: selectedConfig?.icon || '📄',
+                value: selectedCustomType
+                  ? (isAr ? selectedCustomType.name_ar : selectedCustomType.name_en)
+                  : selectedConfig ? (isAr ? selectedConfig.name_ar : selectedConfig.name_en) : selectedType,
+                icon: selectedCustomType?.icon || selectedConfig?.icon || '📄',
               },
               { label: isAr ? 'الموضوع' : 'Subject',     value: subject,      icon: '📝' },
               { label: isAr ? 'الوصف' : 'Description',   value: description,  icon: '📃' },
@@ -786,43 +979,57 @@ export default function NewRequestForm({ configs, companies, departments, employ
                 value: isAr ? priorityLabel?.ar : priorityLabel?.en,
                 icon: priority === 'urgent' ? '🔴' : priority === 'high' ? '🟠' : priority === 'low' ? '🔵' : '🟢',
               },
-              ...(cfg.co !== 'none' ? [{
-                label: isAr ? 'الشركة المستقبلة' : 'Dest. Company',
-                value: destCompanyName ? (isAr ? destCompanyName.name_ar : destCompanyName.name_en)
-                       : (cfg.co === 'own' && ownCompany) ? (isAr ? ownCompany.name_ar : ownCompany.name_en) : '—',
-                icon: '🏢',
-              }] : []),
-              ...(cfg.dept !== 'none' ? [{
-                label: isAr ? 'القسم المستقبل' : 'Dest. Department',
-                value: destDeptName ? (isAr ? destDeptName.name_ar : destDeptName.name_en)
-                       : (cfg.dept === 'own' && ownDept) ? (isAr ? ownDept.name_ar : ownDept.name_en) : '—',
-                icon: '🏬',
-              }] : []),
-              ...(destDeptId ? [{
-                label: isAr ? 'إرسال إلى' : 'Send To',
-                value: targetEmployee && targetEmpObj
-                  ? `${targetEmpObj.full_name_ar} (${targetEmpObj.employee_code})`
-                  : (isAr ? 'رئيس القسم (تلقائي)' : 'Dept Head (auto)'),
-                icon: '👤',
-              }] : []),
-              ...(selectedType === 'fund_disbursement' && amount ? [
-                { label: isAr ? 'المبلغ' : 'Amount', value: `${amount} ${currency}`, icon: '💰' },
-                ...(payee ? [{ label: isAr ? 'المستفيد' : 'Payee', value: payee, icon: '👤' }] : []),
-              ] : []),
-              ...(selectedType === 'employee_onboarding' ? [
-                { label: isAr ? 'اسم الموظف' : 'Employee Name',   value: meta.emp_name_ar || '—',  icon: '👤' },
-                { label: isAr ? 'الهوية' : 'National ID',          value: meta.national_id || '—',  icon: '🪪' },
-                { label: isAr ? 'المسمى الوظيفي' : 'Job Title',   value: meta.job_title_ar || '—', icon: '💼' },
-                { label: isAr ? 'القسم' : 'Department',            value: departments.find(d => d.id === meta.onboard_dept_id) ? (isAr ? departments.find(d => d.id === meta.onboard_dept_id)!.name_ar : departments.find(d => d.id === meta.onboard_dept_id)!.name_en) : '—', icon: '🏬' },
-                { label: isAr ? 'الراتب' : 'Salary',               value: meta.salary ? `${meta.salary} SAR` : '—', icon: '💰' },
-                { label: isAr ? 'تاريخ الانضمام' : 'Start Date',  value: meta.start_date || '—',   icon: '📅' },
-                ...(meta.direct_manager_id ? [{ label: isAr ? 'المدير المباشر' : 'Direct Manager', value: (() => { const m = onboardingDeptEmployees.find(e => e.id === meta.direct_manager_id); return m ? `${m.full_name_ar} (${m.employee_code})` : meta.direct_manager_id; })(), icon: '👨‍💼' }] : []),
-              ] : []),
-              ...(selectedType === 'leave_approval' ? [
-                { label: isAr ? 'نوع الإجازة' : 'Leave Type', value: isAr ? leaveTypeLabel?.ar : leaveTypeLabel?.en, icon: '🗓' },
-                { label: isAr ? 'من تاريخ' : 'Start Date',  value: leaveStart, icon: '📅' },
-                { label: isAr ? 'إلى تاريخ' : 'End Date',   value: leaveEnd,   icon: '📅' },
-              ] : []),
+              ...(selectedCustomType ? [
+                ...(selectedCustomType.flow_mode === 'fixed' ? [
+                  { label: isAr ? 'المسار' : 'Flow', value: isAr ? 'ثابت (مسار محدد مسبقاً)' : 'Fixed (predefined path)', icon: '🔀' },
+                ] : [
+                  ...(destCompanyName ? [{ label: isAr ? 'الشركة المستقبلة' : 'Dest. Company', value: isAr ? destCompanyName.name_ar : destCompanyName.name_en, icon: '🏢' }] : []),
+                  ...(destDeptName ? [{ label: isAr ? 'القسم المستقبل' : 'Dest. Department', value: isAr ? destDeptName.name_ar : destDeptName.name_en, icon: '🏬' }] : []),
+                ]),
+                ...(selectedCustomType.custom_fields || []).map((field: any) => ({
+                  label: isAr ? field.label_ar : field.label_en,
+                  value: customFieldsData[field.key] || '—',
+                  icon: '🔹',
+                })),
+              ] : [
+                ...(cfg.co !== 'none' ? [{
+                  label: isAr ? 'الشركة المستقبلة' : 'Dest. Company',
+                  value: destCompanyName ? (isAr ? destCompanyName.name_ar : destCompanyName.name_en)
+                         : (cfg.co === 'own' && ownCompany) ? (isAr ? ownCompany.name_ar : ownCompany.name_en) : '—',
+                  icon: '🏢',
+                }] : []),
+                ...(cfg.dept !== 'none' ? [{
+                  label: isAr ? 'القسم المستقبل' : 'Dest. Department',
+                  value: destDeptName ? (isAr ? destDeptName.name_ar : destDeptName.name_en)
+                         : (cfg.dept === 'own' && ownDept) ? (isAr ? ownDept.name_ar : ownDept.name_en) : '—',
+                  icon: '🏬',
+                }] : []),
+                ...(destDeptId ? [{
+                  label: isAr ? 'إرسال إلى' : 'Send To',
+                  value: targetEmployee && targetEmpObj
+                    ? `${targetEmpObj.full_name_ar} (${targetEmpObj.employee_code})`
+                    : (isAr ? 'رئيس القسم (تلقائي)' : 'Dept Head (auto)'),
+                  icon: '👤',
+                }] : []),
+                ...(selectedType === 'fund_disbursement' && amount ? [
+                  { label: isAr ? 'المبلغ' : 'Amount', value: `${amount} ${currency}`, icon: '💰' },
+                  ...(payee ? [{ label: isAr ? 'المستفيد' : 'Payee', value: payee, icon: '👤' }] : []),
+                ] : []),
+                ...(selectedType === 'employee_onboarding' ? [
+                  { label: isAr ? 'اسم الموظف' : 'Employee Name',   value: meta.emp_name_ar || '—',  icon: '👤' },
+                  { label: isAr ? 'الهوية' : 'National ID',          value: meta.national_id || '—',  icon: '🪪' },
+                  { label: isAr ? 'المسمى الوظيفي' : 'Job Title',   value: meta.job_title_ar || '—', icon: '💼' },
+                  { label: isAr ? 'القسم' : 'Department',            value: departments.find(d => d.id === meta.onboard_dept_id) ? (isAr ? departments.find(d => d.id === meta.onboard_dept_id)!.name_ar : departments.find(d => d.id === meta.onboard_dept_id)!.name_en) : '—', icon: '🏬' },
+                  { label: isAr ? 'الراتب' : 'Salary',               value: meta.salary ? `${meta.salary} SAR` : '—', icon: '💰' },
+                  { label: isAr ? 'تاريخ الانضمام' : 'Start Date',  value: meta.start_date || '—',   icon: '📅' },
+                  ...(meta.direct_manager_id ? [{ label: isAr ? 'المدير المباشر' : 'Direct Manager', value: (() => { const m = onboardingDeptEmployees.find(e => e.id === meta.direct_manager_id); return m ? `${m.full_name_ar} (${m.employee_code})` : meta.direct_manager_id; })(), icon: '👨‍💼' }] : []),
+                ] : []),
+                ...(selectedType === 'leave_approval' ? [
+                  { label: isAr ? 'نوع الإجازة' : 'Leave Type', value: isAr ? leaveTypeLabel?.ar : leaveTypeLabel?.en, icon: '🗓' },
+                  { label: isAr ? 'من تاريخ' : 'Start Date',  value: leaveStart, icon: '📅' },
+                  { label: isAr ? 'إلى تاريخ' : 'End Date',   value: leaveEnd,   icon: '📅' },
+                ] : []),
+              ]),
               {
                 label: isAr ? 'عدد المرفقات' : 'Attachments',
                 value: files.length > 0 ? `${files.length} ${isAr ? 'ملف' : 'file(s)'}` : (isAr ? 'لا توجد مرفقات' : 'No attachments'),

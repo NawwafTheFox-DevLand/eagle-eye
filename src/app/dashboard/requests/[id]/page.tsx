@@ -108,6 +108,44 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
       slaInfo = { hoursElapsed, targetHours, maxHours, status };
     }
 
+    // ── Custom fixed-path data ────────────────────────────────────────────────
+    const customTypeId: string | null = (request.metadata as any)?.custom_type_id || null;
+    let isCustomFixedPath = false;
+    let customSteps: any[] = [];
+    let customTypeName: { ar: string; en: string } | null = null;
+    let customTypeFields: any[] = [];
+
+    if (customTypeId) {
+      const { data: ct } = await service
+        .from('custom_request_types')
+        .select('flow_mode, name_ar, name_en, custom_fields')
+        .eq('id', customTypeId)
+        .single();
+      if (ct) {
+        customTypeFields = (ct as any).custom_fields || [];
+      }
+      if (ct?.flow_mode === 'fixed') {
+        isCustomFixedPath = true;
+        customTypeName = { ar: (ct as any).name_ar, en: (ct as any).name_en };
+        const { data: stepsRaw } = await service
+          .from('custom_request_steps')
+          .select('step_order, department_id, company_id, action_label_ar, action_label_en, is_final')
+          .eq('custom_type_id', customTypeId)
+          .order('step_order', { ascending: true });
+        const stepDeptIds = [...new Set((stepsRaw || []).map((s: any) => s.department_id).filter(Boolean))] as string[];
+        const { data: stepDeptRows } = stepDeptIds.length > 0
+          ? await service.from('departments').select('id, name_ar, name_en').in('id', stepDeptIds)
+          : { data: [] as any[] };
+        const stepDeptMap = new Map((stepDeptRows || []).map((d: any) => [d.id, d]));
+        customSteps = (stepsRaw || []).map((s: any) => ({
+          ...s,
+          dept: stepDeptMap.get(s.department_id) || null,
+        }));
+      } else if (ct) {
+        customTypeName = { ar: (ct as any).name_ar, en: (ct as any).name_en };
+      }
+    }
+
     // ── Onboarding-specific data ──────────────────────────────────────────────
     const isOnboardingParent =
       (request as any).request_type === 'employee_onboarding' && !(request as any).parent_request_id;
@@ -229,6 +267,11 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
       uploader: e.uploaded_by ? empMap.get(e.uploaded_by) || null : null,
     }));
 
+    // For fixed-path, check if current step is the last
+    const currentStep: number = (request.metadata as any)?.current_step || 1;
+    const totalSteps: number = (request.metadata as any)?.total_steps || 1;
+    const isLastStep = currentStep >= totalSteps;
+
     return (
       <RequestDetailClient
         request={request}
@@ -257,6 +300,13 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
         parentRequest={parentRequest}
         dependsOnStatus={dependsOnStatus}
         slaInfo={slaInfo}
+        isCustomFixedPath={isCustomFixedPath}
+        customSteps={customSteps}
+        customTypeName={customTypeName}
+        customTypeFields={customTypeFields}
+        currentStep={currentStep}
+        totalSteps={totalSteps}
+        isLastStep={isLastStep}
       />
     );
   } catch (err: any) {

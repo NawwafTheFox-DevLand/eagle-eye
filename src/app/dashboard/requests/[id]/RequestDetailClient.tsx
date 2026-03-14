@@ -134,7 +134,10 @@ function formatDate(dateStr: string, isAr: boolean): string {
 
 // ─── Internal metadata keys (UUIDs used for routing — never show to users) ─────
 
-const HIDDEN_METADATA_KEYS = new Set(['target_employee_id', 'target_department_id', 'direct_manager_id', 'progress']);
+const HIDDEN_METADATA_KEYS = new Set([
+  'target_employee_id', 'target_department_id', 'direct_manager_id', 'progress',
+  'custom_type_id', 'custom_fields_data', 'current_step', 'total_steps',
+]);
 
 // Request types that have dedicated metadata cards — their metadata is shown in those cards, not the generic loop
 const TYPES_WITH_DEDICATED_METADATA = new Set(['employee_onboarding']);
@@ -177,6 +180,14 @@ interface Props {
   dependsOnStatus?: string | null;
   // SLA
   slaInfo?: { hoursElapsed: number; targetHours: number; maxHours: number; status: 'ok' | 'warning' | 'critical' } | null;
+  // Custom fixed-path
+  isCustomFixedPath?: boolean;
+  customSteps?: any[];
+  customTypeName?: { ar: string; en: string } | null;
+  customTypeFields?: any[];
+  currentStep?: number;
+  totalSteps?: number;
+  isLastStep?: boolean;
 }
 
 // ─── Component ─────────────────────────────────────────────────────────────────
@@ -208,6 +219,13 @@ export default function RequestDetailClient({
   parentRequest = null,
   dependsOnStatus = null,
   slaInfo = null,
+  isCustomFixedPath = false,
+  customSteps = [],
+  customTypeName = null,
+  customTypeFields = [],
+  currentStep = 1,
+  totalSteps = 1,
+  isLastStep = false,
 }: Props) {
   const { lang } = useLanguage();
   const isAr = lang === 'ar';
@@ -350,9 +368,11 @@ export default function RequestDetailClient({
                 </span>
               )}
               {/* Type badge */}
-              {request.request_type && (
-                <span className="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">
-                  {TYPE_LABELS[request.request_type]
+              {(customTypeName || request.request_type) && (
+                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${customTypeName ? 'bg-violet-100 text-violet-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                  {customTypeName
+                    ? (isAr ? customTypeName.ar : customTypeName.en)
+                    : TYPE_LABELS[request.request_type]
                     ? (isAr ? TYPE_LABELS[request.request_type].ar : TYPE_LABELS[request.request_type].en)
                     : request.request_type.replace(/_/g, ' ')}
                 </span>
@@ -373,15 +393,22 @@ export default function RequestDetailClient({
             </h2>
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
               {/* Request type — always first */}
-              {request.request_type && (
+              {(customTypeName || request.request_type) && (
                 <div className="sm:col-span-2">
                   <dt className="text-slate-500 mb-0.5">{isAr ? 'نوع الطلب' : 'Request Type'}</dt>
                   <dd>
-                    <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">
-                      {TYPE_LABELS[request.request_type]
+                    <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${customTypeName ? 'bg-violet-100 text-violet-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                      {customTypeName
+                        ? (isAr ? customTypeName.ar : customTypeName.en)
+                        : TYPE_LABELS[request.request_type]
                         ? (isAr ? TYPE_LABELS[request.request_type].ar : TYPE_LABELS[request.request_type].en)
                         : request.request_type.replace(/_/g, ' ')}
                     </span>
+                    {isCustomFixedPath && (
+                      <span className="ms-2 inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-violet-50 text-violet-600 border border-violet-200">
+                        {isAr ? 'مسار ثابت' : 'Fixed Path'}
+                      </span>
+                    )}
                   </dd>
                 </div>
               )}
@@ -429,6 +456,30 @@ export default function RequestDetailClient({
                 {isAr ? 'الوصف' : 'Description'}
               </h2>
               <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap">{request.description}</p>
+            </div>
+          )}
+
+          {/* 3b. Custom fields */}
+          {customTypeName && (request.metadata as any)?.custom_fields_data &&
+           Object.keys((request.metadata as any).custom_fields_data).length > 0 && (
+            <div className="bg-white rounded-2xl border border-violet-100 shadow-sm p-6">
+              <h2 className="text-sm font-semibold text-violet-600 uppercase tracking-wide mb-4">
+                🗂️ {isAr ? 'بيانات الطلب المخصص' : 'Custom Request Data'}
+              </h2>
+              <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
+                {Object.entries((request.metadata as any).custom_fields_data as Record<string, string>).map(([k, v]) => {
+                  const fieldDef = customTypeFields.find((f: any) => f.key === k);
+                  const label = fieldDef
+                    ? (isAr ? fieldDef.label_ar : fieldDef.label_en)
+                    : k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                  return (
+                    <div key={k}>
+                      <dt className="text-slate-500 mb-0.5">{label}</dt>
+                      <dd className="font-medium text-slate-800">{String(v) || '—'}</dd>
+                    </div>
+                  );
+                })}
+              </dl>
             </div>
           )}
 
@@ -762,6 +813,8 @@ export default function RequestDetailClient({
                 departments={allDepartments}
                 isOnboardingChild={isOnboardingChild}
                 dependsOnStatus={dependsOnStatus}
+                isCustomFixedPath={isCustomFixedPath}
+                isLastStep={isLastStep}
               />
             </div>
           )}
@@ -798,6 +851,65 @@ export default function RequestDetailClient({
               </>
             )}
           </div>
+
+          {/* 1b. Fixed-path step tracker */}
+          {isCustomFixedPath && customSteps.length > 0 && (
+            <div className="bg-white rounded-2xl border border-violet-200 shadow-sm p-6">
+              <h2 className="text-sm font-semibold text-violet-600 uppercase tracking-wide mb-4">
+                🗂️ {isAr ? 'تقدم المسار' : 'Path Progress'}
+              </h2>
+              <div className="flex flex-col gap-2">
+                {customSteps.map((step: any, idx: number) => {
+                  const stepNum = idx + 1;
+                  const isDone = stepNum < currentStep;
+                  const isCurrent = stepNum === currentStep;
+                  const isPending = stepNum > currentStep;
+                  return (
+                    <div key={idx} className={`flex items-center gap-3 p-2.5 rounded-xl text-sm ${
+                      isCurrent ? 'bg-violet-50 border border-violet-200' :
+                      isDone    ? 'bg-emerald-50 border border-emerald-100' :
+                                  'bg-slate-50 border border-slate-100'
+                    }`}>
+                      <span className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                        isDone    ? 'bg-emerald-500 text-white' :
+                        isCurrent ? 'bg-violet-600 text-white' :
+                                    'bg-slate-200 text-slate-500'
+                      }`}>
+                        {isDone ? '✓' : stepNum}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className={`font-medium truncate ${
+                          isCurrent ? 'text-violet-900' :
+                          isDone    ? 'text-emerald-800' :
+                                      'text-slate-400'
+                        }`}>
+                          {isAr ? step.action_label_ar : step.action_label_en}
+                        </p>
+                        {step.dept && (
+                          <p className="text-xs text-slate-400 truncate">
+                            {isAr ? step.dept.name_ar : step.dept.name_en}
+                          </p>
+                        )}
+                      </div>
+                      {isCurrent && (
+                        <span className="text-xs font-semibold text-violet-600 shrink-0">
+                          {isAr ? 'الحالي' : 'Current'}
+                        </span>
+                      )}
+                      {step.is_final && (
+                        <span className="text-xs text-slate-400 shrink-0">🏁</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="mt-3 text-xs text-slate-400 text-center">
+                {isAr
+                  ? `الخطوة ${currentStep} من ${totalSteps}`
+                  : `Step ${currentStep} of ${totalSteps}`}
+              </p>
+            </div>
+          )}
 
           {/* 2. SLA Indicator */}
           {slaInfo && (

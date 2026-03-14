@@ -7,6 +7,7 @@ import {
   assignToEmployee, stampCompanyExit, stampFinance, stampHR, stampCEO,
   completeRequest, rejectRequest, cancelRequest, getDepartmentEmployees,
 } from '@/app/actions/requests';
+import { advanceCustomStep } from '@/app/actions/custom-requests';
 import { uploadEvidence } from '@/app/actions/evidence';
 import { completeOnboardingChild } from '@/app/actions/onboarding';
 
@@ -34,6 +35,8 @@ interface Props {
   departments: any[];
   isOnboardingChild?: boolean;
   dependsOnStatus?: string | null;
+  isCustomFixedPath?: boolean;
+  isLastStep?: boolean;
 }
 
 function GateBadge({ icon, label, done, isAr }: { icon: string; label: string; done: boolean; isAr: boolean }) {
@@ -71,6 +74,8 @@ export default function RequestActions({
   departments,
   isOnboardingChild = false,
   dependsOnStatus = null,
+  isCustomFixedPath = false,
+  isLastStep = false,
 }: Props) {
   const { lang } = useLanguage();
   const isAr = lang === 'ar';
@@ -183,6 +188,123 @@ export default function RequestActions({
             onClick={handleOnboardingReject}
             disabled={isPending}
             className="rounded-xl px-4 py-2 text-sm font-semibold bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 transition-colors">
+            ❌ {isAr ? 'رفض' : 'Reject'}
+          </button>
+        </div>
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-sm text-red-700">{error}</div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Custom fixed-path panel ──────────────────────────────────────────────────
+  if (isCustomFixedPath && requestStatus === 'in_progress' && assignedTo === currentEmployeeId) {
+    function handleAdvance() {
+      if (!note.trim()) { setError(isAr ? 'الملاحظات مطلوبة' : 'Notes are required'); return; }
+      setError('');
+      startTransition(async () => {
+        await uploadFiles();
+        const result = await advanceCustomStep(requestId, note);
+        if (result.error) { setError(result.error); return; }
+        setSuccess(isAr
+          ? (isLastStep ? 'تم إنجاز الطلب بنجاح' : 'تمت الموافقة والتحويل للخطوة التالية')
+          : (isLastStep ? 'Request completed successfully' : 'Approved and forwarded to next step'));
+        setTimeout(() => router.push(isLastStep ? '/dashboard/requests' : '/dashboard/inbox'), 2000);
+      });
+    }
+
+    function handleFixedReturn() {
+      if (!note.trim()) { setError(isAr ? 'الملاحظات مطلوبة' : 'Notes are required'); return; }
+      setError('');
+      startTransition(async () => {
+        await uploadFiles();
+        const result = await returnRequest(requestId, note);
+        if (result.error) { setError(result.error); return; }
+        setSuccess(isAr ? 'تم الإرجاع بنجاح' : 'Returned successfully');
+        setTimeout(() => router.push('/dashboard/inbox'), 2000);
+      });
+    }
+
+    function handleFixedAsk() {
+      if (!note.trim()) { setError(isAr ? 'الملاحظات مطلوبة' : 'Notes are required'); return; }
+      setError('');
+      startTransition(async () => {
+        await uploadFiles();
+        const result = await askRequester(requestId, note);
+        if (result.error) { setError(result.error); return; }
+        setSuccess(isAr ? 'تم إرسال طلب التوضيح' : 'Clarification request sent');
+        setTimeout(() => router.push('/dashboard/inbox'), 2000);
+      });
+    }
+
+    function handleFixedReject() {
+      if (!note.trim()) { setError(isAr ? 'الملاحظات مطلوبة' : 'Notes are required'); return; }
+      setError('');
+      startTransition(async () => {
+        await uploadFiles();
+        const result = await rejectRequest(requestId, note);
+        if (result.error) { setError(result.error); return; }
+        setSuccess(isAr ? 'تم رفض الطلب' : 'Request rejected');
+        setTimeout(() => router.push('/dashboard/requests'), 2000);
+      });
+    }
+
+    return (
+      <div className="bg-white rounded-2xl border border-violet-100 p-5 space-y-4">
+        <h3 className="font-bold text-slate-900">
+          🗂️ {isAr ? 'إجراءات المسار الثابت' : 'Fixed-Path Actions'}
+        </h3>
+        <div className="space-y-3">
+          <textarea
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            rows={3}
+            placeholder={isAr ? 'الملاحظات *' : 'Notes *'}
+            className="input-field resize-none"
+          />
+          <input
+            type="file"
+            multiple
+            onChange={e => setFiles(Array.from(e.target.files || []))}
+            className="text-sm text-slate-600"
+          />
+          {files.length > 0 && (
+            <p className="text-xs text-slate-500">
+              {files.length} {isAr ? 'ملف مرفق' : 'file(s) selected'}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={handleAdvance}
+            disabled={isPending}
+            className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition-colors text-white ${
+              isLastStep
+                ? 'bg-emerald-600 hover:bg-emerald-700'
+                : 'bg-violet-600 hover:bg-violet-700'
+            }`}
+          >
+            {isLastStep
+              ? (isAr ? '✅ إنجاز الطلب' : '✅ Complete Request')
+              : (isAr ? '↗ موافقة وتحويل' : '↗ Approve & Forward')}
+          </button>
+          <button
+            onClick={handleFixedReturn}
+            disabled={isPending}
+            className="rounded-xl px-4 py-2 text-sm font-semibold transition-colors bg-amber-500 text-white hover:bg-amber-600">
+            ↩ {isAr ? 'إرجاع' : 'Return'}
+          </button>
+          <button
+            onClick={handleFixedAsk}
+            disabled={isPending}
+            className="rounded-xl px-4 py-2 text-sm font-semibold transition-colors bg-amber-500 text-white hover:bg-amber-600">
+            ❓ {isAr ? 'طلب توضيح' : 'Ask Requester'}
+          </button>
+          <button
+            onClick={handleFixedReject}
+            disabled={isPending}
+            className="rounded-xl px-4 py-2 text-sm font-semibold transition-colors bg-red-600 text-white hover:bg-red-700">
             ❌ {isAr ? 'رفض' : 'Reject'}
           </button>
         </div>

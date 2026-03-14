@@ -224,6 +224,92 @@ export async function submitRequest(requestId: string): Promise<{ error: string 
       return submitOnboardingRequest(requestId);
     }
 
+    // Custom request type handling
+    const customTypeId: string | null = (request.metadata as any)?.custom_type_id || null;
+    if (customTypeId) {
+      const { data: customType } = await service
+        .from('custom_request_types')
+        .select('flow_mode, requires_ceo, requires_hr, requires_finance')
+        .eq('id', customTypeId)
+        .single();
+
+      if (customType?.flow_mode === 'fixed') {
+        // Get first step
+        const { data: firstStep } = await service
+          .from('custom_request_steps')
+          .select('step_order, department_id, company_id')
+          .eq('custom_type_id', customTypeId)
+          .order('step_order', { ascending: true })
+          .limit(1)
+          .single();
+
+        if (!firstStep) return { error: 'لم يتم تكوين خطوات المسار الثابت' };
+
+        const { data: stepDept } = await service
+          .from('departments')
+          .select('head_employee_id')
+          .eq('id', firstStep.department_id)
+          .single();
+
+        const firstAssignee = stepDept?.head_employee_id;
+        if (!firstAssignee) return { error: 'لا يوجد رئيس للقسم في الخطوة الأولى' };
+
+        const { data: totalStepsCount } = await service
+          .from('custom_request_steps')
+          .select('step_order', { count: 'exact' })
+          .eq('custom_type_id', customTypeId);
+
+        const totalSteps = (totalStepsCount as any[])?.length || 1;
+        const now = new Date().toISOString();
+        const newMetadata = {
+          ...(request.metadata as any),
+          current_step: 1,
+          total_steps: totalSteps,
+        };
+
+        const { error: updateErr } = await service.from('requests').update({
+          status: 'in_progress',
+          assigned_to: firstAssignee,
+          destination_dept_id: firstStep.department_id,
+          destination_company_id: firstStep.company_id,
+          submitted_at: now,
+          requires_ceo: customType.requires_ceo,
+          requires_hr: customType.requires_hr,
+          requires_finance: customType.requires_finance,
+          metadata: newMetadata,
+        }).eq('id', requestId);
+        if (updateErr) return { error: 'فشل تقديم الطلب: ' + updateErr.message };
+
+        await service.from('request_actions').insert({
+          request_id: requestId,
+          action: 'submitted',
+          actor_id: employee.id,
+          to_person_id: firstAssignee,
+          from_status: 'draft',
+          to_status: 'in_progress',
+          note: 'تم تقديم الطلب — الخطوة 1',
+        });
+
+        await notify(service, {
+          recipientId: firstAssignee,
+          requestId,
+          type: 'request_submitted',
+          titleAr: 'طلب مخصص جديد يحتاج مراجعتك',
+          titleEn: 'New custom request awaiting your review',
+          bodyAr: `قدّم ${employee.full_name_ar} طلباً مخصصاً`,
+          bodyEn: `${employee.full_name_en || employee.full_name_ar} submitted a custom request`,
+        });
+
+        return { error: null };
+      }
+      // free-flow custom type: update gate flags then fall through to standard routing
+      await service.from('requests').update({
+        requires_ceo: customType?.requires_ceo ?? false,
+        requires_hr: customType?.requires_hr ?? false,
+        requires_finance: customType?.requires_finance ?? false,
+      }).eq('id', requestId);
+    }
+
     // If requester chose a specific person, route directly to them
     const targetEmployeeId: string | null = (request.metadata as any)?.target_employee_id || null;
     if (targetEmployeeId) {
@@ -693,13 +779,31 @@ export async function completeRequest(requestId: string, note: string): Promise<
     if (!canComplete) return { error: 'ليس لديك صلاحية إنهاء الطلب' };
 
     const { data: req } = await service.from('requests')
-      .select('status, requires_ceo, requires_hr, requires_finance, ceo_stamped_at, hr_stamped_at, finance_stamped_at')
+      .select('status, requires_ceo, requires_hr, requires_finance, ceo_stamped_at, hr_stamped_at, finance_stamped_at, metadata, assigned_to, destination_dept_id')
       .eq('id', requestId).single();
     if (!req) return { error: 'الطلب غير موجود' };
 
     if (req.requires_finance && !req.finance_stamped_at) return { error: 'يتطلب اعتماد إدارة المالية أولاً' };
     if (req.requires_hr && !req.hr_stamped_at) return { error: 'يتطلب موافقة إدارة الموارد البشرية أولاً' };
     if (req.requires_ceo && !req.ceo_stamped_at) return { error: 'يتطلب موافقة الرئيس التنفيذي للقابضة أولاً' };
+
+    // Custom type: check must_end_dept restriction
+    const customTypeId = (req.metadata as any)?.custom_type_id || null;
+    if (customTypeId) {
+      const { data: ct } = await service
+        .from('custom_request_types')
+        .select('must_end_dept_id, flow_mode')
+        .eq('id', customTypeId)
+        .single();
+      if (ct?.must_end_dept_id && ct.flow_mode === 'free') {
+        // For free flow with must_end_dept, ensure current destination is the required dept
+        if (req.destination_dept_id !== ct.must_end_dept_id) {
+          const { data: endDept } = await service.from('departments').select('name_ar, name_en').eq('id', ct.must_end_dept_id).single();
+          const deptName = endDept ? (endDept.name_ar || endDept.name_en) : ct.must_end_dept_id;
+          return { error: `يجب أن يصل الطلب إلى قسم "${deptName}" قبل الإنهاء` };
+        }
+      }
+    }
 
     const now = new Date().toISOString();
     const { error: updateErr } = await service.from('requests').update({

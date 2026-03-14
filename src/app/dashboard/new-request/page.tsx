@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import NewRequestForm from './NewRequestForm';
+import { getVisibleCustomTypes } from '@/app/actions/custom-requests';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,6 +46,12 @@ export default async function NewRequestPage() {
       service.from('request_type_configs').select('id, request_type, name_ar, name_en, icon, min_role_level, requires_ceo, requires_hr, requires_finance, is_routine_eligible').eq('is_active', true),
     ]);
 
+    const customTypes = await getVisibleCustomTypes(
+      emp.id,
+      emp.company_id || '',
+      emp.department_id || ''
+    );
+
     const roles = roleRows || [];
     const isHolding = (company as any)?.is_holding === true;
     const roleLevel = getRoleLevel(roles, isHolding);
@@ -63,6 +70,7 @@ export default async function NewRequestPage() {
           companies={allCompanies || []}
           departments={allDepts || []}
           employee={employee}
+          customTypes={customTypes}
         />
       </div>
     );

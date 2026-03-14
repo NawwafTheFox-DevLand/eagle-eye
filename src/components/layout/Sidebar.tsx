@@ -40,13 +40,13 @@ const NAV = [
   },
   {
     group: { ar: 'الإدارة', en: 'Administration' },
-    roles: ['super_admin'],
+    roles: ['super_admin', 'ceo', 'department_manager'],
     items: [
-      { href: '/dashboard/admin/employees',   icon: '👥', ar: 'الموظفين',       en: 'Employees' },
-      { href: '/dashboard/admin/departments', icon: '🏢', ar: 'الأقسام',        en: 'Departments' },
-      { href: '/dashboard/admin/roles',       icon: '🔑', ar: 'الصلاحيات',      en: 'Roles' },
-      { href: '/dashboard/admin/sla',         icon: '⏱️', ar: 'مستوى الخدمة',   en: 'SLA Config' },
-      { href: '/dashboard/admin/audit',       icon: '📜', ar: 'سجل التدقيق',    en: 'Audit Log' },
+      { href: '/dashboard/admin/employees',   icon: '👥', ar: 'الموظفين',       en: 'Employees',   adminOnly: true },
+      { href: '/dashboard/admin/departments', icon: '🏢', ar: 'الأقسام',        en: 'Departments', adminOnly: true },
+      { href: '/dashboard/admin/roles',       icon: '🔑', ar: 'الصلاحيات',      en: 'Roles',       adminOnly: true },
+      { href: '/dashboard/admin/sla',         icon: '⏱️', ar: 'مستوى الخدمة',   en: 'SLA Config',  adminOnly: true },
+      { href: '/dashboard/admin/audit',       icon: '📜', ar: 'سجل التدقيق',    en: 'Audit Log',   adminOnly: true },
     ],
   },
   {
@@ -100,6 +100,7 @@ export default function Sidebar({ employee, roles, inboxCount, notifCount, isHRH
                 </p>
               )}
               {section.items.map(item => {
+                if ((item as any).adminOnly && !roles.includes('super_admin')) return null;
                 const active = isActive(item.href);
                 const badgeCount = (item as any).badge === 'inbox' ? inboxCount : (item as any).badge === 'notif' ? notifCount : 0;
                 return (
@@ -142,6 +143,20 @@ export default function Sidebar({ employee, roles, inboxCount, notifCount, isHRH
                 >
                   <span className="text-base shrink-0">🧑‍💼</span>
                   {!collapsed && <span className="flex-1">{isAr ? 'إعدادات التعيين' : 'Onboarding Config'}</span>}
+                </Link>
+              )}
+              {isAdminSection && (roles.includes('super_admin') || roles.includes('ceo') || roles.includes('department_manager')) && (
+                <Link
+                  href="/dashboard/admin/custom-requests"
+                  title={collapsed ? (isAr ? 'أنواع مخصصة' : 'Custom Types') : undefined}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                    isActive('/dashboard/admin/custom-requests')
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  } ${collapsed ? 'justify-center' : ''}`}
+                >
+                  <span className="text-base shrink-0">🗂️</span>
+                  {!collapsed && <span className="flex-1">{isAr ? 'أنواع مخصصة' : 'Custom Types'}</span>}
                 </Link>
               )}
             </div>
