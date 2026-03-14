@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
+import { getOnboardingConfig } from '@/app/actions/onboarding';
 import OnboardingConfigClient from './OnboardingConfigClient';
 
 export const dynamic = 'force-dynamic';
@@ -11,13 +12,15 @@ export default async function OnboardingConfigPage() {
 
   const service = await createServiceClient();
 
+  // Get employee
   const { data: emp } = await service
     .from('employees')
-    .select('id, department_id, company_id')
+    .select('id, company_id, department_id')
     .eq('auth_user_id', user.id)
     .single();
   if (!emp) redirect('/login');
 
+  // Get roles
   const { data: roleRows } = await service
     .from('user_roles')
     .select('role')
@@ -25,7 +28,7 @@ export default async function OnboardingConfigPage() {
     .eq('is_active', true);
   const roles = (roleRows || []).map((r: any) => r.role as string);
 
-  // Determine if HR head (head of a department with 'HR' in the code)
+  // Check if head of HR dept
   let isHRHead = false;
   if (emp.department_id) {
     const { data: dept } = await service
@@ -36,24 +39,33 @@ export default async function OnboardingConfigPage() {
     isHRHead = dept?.head_employee_id === emp.id && (dept?.code || '').toUpperCase().includes('HR');
   }
 
-  const isSuperAdmin = roles.includes('super_admin');
-  if (!isSuperAdmin && !isHRHead) redirect('/dashboard');
+  const isAuthorized = roles.includes('super_admin') || isHRHead;
+  if (!isAuthorized) redirect('/dashboard');
 
-  const { data: configs } = await service
-    .from('onboarding_config')
-    .select('id, task_type, name_ar, name_en, assignee_dept_code, sla_hours, depends_on, is_active')
-    .order('task_type');
-
-  const { data: departments } = await service
-    .from('departments')
-    .select('id, code, name_ar, name_en')
-    .eq('is_active', true)
-    .order('code');
+  // Fetch data
+  const [configs, { data: employees }, { data: departments }, { data: companies }] = await Promise.all([
+    getOnboardingConfig(),
+    service
+      .from('employees')
+      .select('id, full_name_ar, full_name_en, employee_code, company_id, department_id')
+      .eq('is_active', true)
+      .order('full_name_ar'),
+    service
+      .from('departments')
+      .select('id, name_ar, name_en, company_id')
+      .eq('is_active', true),
+    service
+      .from('companies')
+      .select('id, name_ar, name_en')
+      .eq('is_active', true),
+  ]);
 
   return (
     <OnboardingConfigClient
-      configs={configs || []}
+      configs={configs}
+      employees={employees || []}
       departments={departments || []}
+      companies={companies || []}
     />
   );
 }
