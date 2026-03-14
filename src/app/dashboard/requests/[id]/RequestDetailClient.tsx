@@ -70,16 +70,17 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const TYPE_LABELS: Record<string, { ar: string; en: string }> = {
-  general_internal:      { ar: 'طلب داخلي عام',    en: 'General Internal'   },
-  cross_department:      { ar: 'طلب بين الأقسام',   en: 'Cross-Department'   },
-  intercompany:          { ar: 'طلب بين الشركات',   en: 'Intercompany'       },
-  fund_disbursement:     { ar: 'طلب صرف مالي',      en: 'Fund Disbursement'  },
-  leave_approval:        { ar: 'طلب إجازة',         en: 'Leave Approval'     },
-  promotion:             { ar: 'طلب ترقية',         en: 'Promotion'          },
-  demotion_disciplinary: { ar: 'طلب تأديبي',        en: 'Disciplinary'       },
-  create_department:     { ar: 'إنشاء قسم',         en: 'Create Department'  },
-  create_company:        { ar: 'إنشاء شركة',        en: 'Create Company'     },
-  create_position:       { ar: 'إنشاء وظيفة',       en: 'Create Position'    },
+  general_internal:      { ar: 'طلب داخلي عام',        en: 'General Internal'    },
+  cross_department:      { ar: 'طلب بين الأقسام',       en: 'Cross-Department'    },
+  intercompany:          { ar: 'طلب بين الشركات',       en: 'Intercompany'        },
+  fund_disbursement:     { ar: 'طلب صرف مالي',          en: 'Fund Disbursement'   },
+  leave_approval:        { ar: 'طلب إجازة',             en: 'Leave Approval'      },
+  promotion:             { ar: 'طلب ترقية',             en: 'Promotion'           },
+  demotion_disciplinary: { ar: 'طلب تأديبي',            en: 'Disciplinary'        },
+  create_department:     { ar: 'إنشاء قسم',             en: 'Create Department'   },
+  create_company:        { ar: 'إنشاء شركة',            en: 'Create Company'      },
+  create_position:       { ar: 'إنشاء وظيفة',           en: 'Create Position'     },
+  employee_onboarding:   { ar: 'توظيف موظف جديد',       en: 'Employee Onboarding' },
 };
 
 const ACTION_LABELS: Record<string, { ar: string; en: string }> = {
@@ -133,7 +134,10 @@ function formatDate(dateStr: string, isAr: boolean): string {
 
 // ─── Internal metadata keys (UUIDs used for routing — never show to users) ─────
 
-const HIDDEN_METADATA_KEYS = new Set(['target_employee_id', 'target_department_id', 'direct_manager_id']);
+const HIDDEN_METADATA_KEYS = new Set(['target_employee_id', 'target_department_id', 'direct_manager_id', 'progress']);
+
+// Request types that have dedicated metadata cards — their metadata is shown in those cards, not the generic loop
+const TYPES_WITH_DEDICATED_METADATA = new Set(['employee_onboarding']);
 
 // ─── Props ─────────────────────────────────────────────────────────────────────
 
@@ -365,6 +369,19 @@ export default function RequestDetailClient({
               {isAr ? 'تفاصيل الطلب' : 'Request Details'}
             </h2>
             <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
+              {/* Request type — always first */}
+              {request.request_type && (
+                <div className="sm:col-span-2">
+                  <dt className="text-slate-500 mb-0.5">{isAr ? 'نوع الطلب' : 'Request Type'}</dt>
+                  <dd>
+                    <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">
+                      {TYPE_LABELS[request.request_type]
+                        ? (isAr ? TYPE_LABELS[request.request_type].ar : TYPE_LABELS[request.request_type].en)
+                        : request.request_type.replace(/_/g, ' ')}
+                    </span>
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt className="text-slate-500 mb-0.5">{isAr ? 'مقدم الطلب' : 'Requester'}</dt>
                 <dd className="font-medium text-slate-800">{personName(requesterName)}</dd>
@@ -393,38 +410,6 @@ export default function RequestDetailClient({
                   {destCompany ? (isAr ? destCompany.name_ar : destCompany.name_en) || '—' : '—'}
                 </dd>
               </div>
-              {request.amount != null && (
-                <div>
-                  <dt className="text-slate-500 mb-0.5">{isAr ? 'المبلغ' : 'Amount'}</dt>
-                  <dd className="font-medium text-slate-800">
-                    {Number(request.amount).toLocaleString()} {request.currency || ''}
-                  </dd>
-                </div>
-              )}
-              {request.payee && (
-                <div>
-                  <dt className="text-slate-500 mb-0.5">{isAr ? 'المستفيد' : 'Payee'}</dt>
-                  <dd className="font-medium text-slate-800">{request.payee}</dd>
-                </div>
-              )}
-              {request.leave_type && (
-                <div>
-                  <dt className="text-slate-500 mb-0.5">{isAr ? 'نوع الإجازة' : 'Leave Type'}</dt>
-                  <dd className="font-medium text-slate-800">{request.leave_type}</dd>
-                </div>
-              )}
-              {request.leave_start_date && (
-                <div>
-                  <dt className="text-slate-500 mb-0.5">{isAr ? 'من تاريخ' : 'From Date'}</dt>
-                  <dd className="font-medium text-slate-800">{request.leave_start_date}</dd>
-                </div>
-              )}
-              {request.leave_end_date && (
-                <div>
-                  <dt className="text-slate-500 mb-0.5">{isAr ? 'إلى تاريخ' : 'To Date'}</dt>
-                  <dd className="font-medium text-slate-800">{request.leave_end_date}</dd>
-                </div>
-              )}
               {request.created_at && (
                 <div>
                   <dt className="text-slate-500 mb-0.5">{isAr ? 'تاريخ الإنشاء' : 'Created'}</dt>
@@ -656,7 +641,9 @@ export default function RequestDetailClient({
               </dl>
             </div>
           )}
-          {!isOnboardingParent && !isOnboardingChild && request.metadata &&
+          {!isOnboardingParent && !isOnboardingChild &&
+           !TYPES_WITH_DEDICATED_METADATA.has(request.request_type) &&
+           request.metadata &&
            Object.keys(request.metadata).some(k => !HIDDEN_METADATA_KEYS.has(k)) && (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
               <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">
