@@ -42,30 +42,27 @@ export default async function OnboardingConfigPage() {
   const isAuthorized = roles.includes('super_admin') || isHRHead;
   if (!isAuthorized) redirect('/dashboard');
 
-  // Fetch data
-  const [configs, { data: employees }, { data: departments }, { data: companies }] = await Promise.all([
+  // Fetch configs, all employees, and HR dept IDs in parallel
+  const [configs, { data: employees }, { data: hrDepts }] = await Promise.all([
     getOnboardingConfig(),
     service
       .from('employees')
-      .select('id, full_name_ar, full_name_en, employee_code, company_id, department_id')
+      .select('id, full_name_ar, full_name_en, employee_code, company_id, department_id, title_ar')
       .eq('is_active', true)
       .order('full_name_ar'),
     service
       .from('departments')
-      .select('id, name_ar, name_en, company_id')
-      .eq('is_active', true),
-    service
-      .from('companies')
-      .select('id, name_ar, name_en')
-      .eq('is_active', true),
+      .select('id')
+      .eq('code', 'HR10'),
   ]);
+
+  const hrDeptIds = (hrDepts || []).map((d: any) => d.id as string);
 
   return (
     <OnboardingConfigClient
       configs={configs}
       employees={employees || []}
-      departments={departments || []}
-      companies={companies || []}
+      hrDeptIds={hrDeptIds}
     />
   );
 }

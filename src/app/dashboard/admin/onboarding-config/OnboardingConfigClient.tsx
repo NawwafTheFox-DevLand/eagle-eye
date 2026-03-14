@@ -33,29 +33,16 @@ interface Employee {
   employee_code: string;
   company_id: string;
   department_id: string;
-}
-
-interface Department {
-  id: string;
-  name_ar: string;
-  name_en: string;
-  company_id: string;
-}
-
-interface Company {
-  id: string;
-  name_ar: string;
-  name_en: string;
+  title_ar?: string | null;
 }
 
 interface Props {
   configs: ConfigRow[];
   employees: Employee[];
-  departments: Department[];
-  companies: Company[];
+  hrDeptIds: string[];
 }
 
-export default function OnboardingConfigClient({ configs, employees, departments, companies }: Props) {
+export default function OnboardingConfigClient({ configs, employees, hrDeptIds }: Props) {
   const { lang } = useLanguage();
   const isAr = lang === 'ar';
   const [isPending, startTransition] = useTransition();
@@ -74,21 +61,15 @@ export default function OnboardingConfigClient({ configs, employees, departments
     setSaved(false);
   }
 
-  // Build dept map for display
-  const deptMap = new Map(departments.map(d => [d.id, d]));
-  const companyMap = new Map(companies.map(c => [c.id, c]));
-
   function getEmpLabel(emp: Employee): string {
-    const dept = deptMap.get(emp.department_id);
-    const deptName = dept ? (isAr ? dept.name_ar : dept.name_en) : '';
-    return `${isAr ? emp.full_name_ar : (emp.full_name_en || emp.full_name_ar)} (${emp.employee_code})${deptName ? ' — ' + deptName : ''}`;
+    const title = emp.title_ar ? ' — ' + emp.title_ar : '';
+    return `${isAr ? emp.full_name_ar : (emp.full_name_en || emp.full_name_ar)} (${emp.employee_code})${title}`;
   }
 
-  // Group employees by company for <optgroup>
-  const employeesByCompany = companies.map(co => ({
-    company: co,
-    employees: employees.filter(e => e.company_id === co.id),
-  })).filter(g => g.employees.length > 0);
+  // Split employees: HR department first, then everyone else
+  const hrSet = new Set(hrDeptIds);
+  const hrEmployees = employees.filter(e => hrSet.has(e.department_id));
+  const otherEmployees = employees.filter(e => !hrSet.has(e.department_id));
 
   async function handleSave() {
     setError('');
@@ -126,6 +107,14 @@ export default function OnboardingConfigClient({ configs, employees, departments
             : 'Set the primary handler, backup, and SLA for each onboarding task'}
         </p>
       </div>
+
+      {hrEmployees.length === 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
+          ⚠️ {isAr
+            ? 'لم يتم العثور على موظفين في قسم الموارد البشرية (HR10). ستظهر جميع الموظفين.'
+            : 'No HR department (HR10) employees found. Showing all employees.'}
+        </div>
+      )}
 
       {editedConfigs.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-500">
@@ -180,18 +169,20 @@ export default function OnboardingConfigClient({ configs, employees, departments
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
                   >
                     <option value="">{isAr ? '— اختر مسؤولاً —' : '— Select Handler —'}</option>
-                    {employeesByCompany.map(group => (
-                      <optgroup
-                        key={group.company.id}
-                        label={isAr ? group.company.name_ar : group.company.name_en}
-                      >
-                        {group.employees.map(emp => (
-                          <option key={emp.id} value={emp.id}>
-                            {getEmpLabel(emp)}
-                          </option>
+                    {hrEmployees.length > 0 && (
+                      <optgroup label={isAr ? 'الموارد البشرية / HR' : 'HR Department'}>
+                        {hrEmployees.map(emp => (
+                          <option key={emp.id} value={emp.id}>{getEmpLabel(emp)}</option>
                         ))}
                       </optgroup>
-                    ))}
+                    )}
+                    {otherEmployees.length > 0 && (
+                      <optgroup label={isAr ? 'أقسام أخرى' : 'Other Departments'}>
+                        {otherEmployees.map(emp => (
+                          <option key={emp.id} value={emp.id}>{getEmpLabel(emp)}</option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </div>
 
@@ -207,18 +198,20 @@ export default function OnboardingConfigClient({ configs, employees, departments
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
                   >
                     <option value="">{isAr ? '— لا يوجد —' : '— None —'}</option>
-                    {employeesByCompany.map(group => (
-                      <optgroup
-                        key={group.company.id}
-                        label={isAr ? group.company.name_ar : group.company.name_en}
-                      >
-                        {group.employees.map(emp => (
-                          <option key={emp.id} value={emp.id}>
-                            {getEmpLabel(emp)}
-                          </option>
+                    {hrEmployees.length > 0 && (
+                      <optgroup label={isAr ? 'الموارد البشرية / HR' : 'HR Department'}>
+                        {hrEmployees.map(emp => (
+                          <option key={emp.id} value={emp.id}>{getEmpLabel(emp)}</option>
                         ))}
                       </optgroup>
-                    ))}
+                    )}
+                    {otherEmployees.length > 0 && (
+                      <optgroup label={isAr ? 'أقسام أخرى' : 'Other Departments'}>
+                        {otherEmployees.map(emp => (
+                          <option key={emp.id} value={emp.id}>{getEmpLabel(emp)}</option>
+                        ))}
+                      </optgroup>
+                    )}
                   </select>
                 </div>
 
