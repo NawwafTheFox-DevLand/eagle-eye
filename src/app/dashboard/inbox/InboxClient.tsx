@@ -122,8 +122,20 @@ export default function InboxClient({ items }: { items: any[] }) {
                     )}
                   </div>
                 </div>
-                <div className="text-xs text-slate-400 shrink-0 mt-1">
-                  {timeAgo(item.last_action_at, isAr)}
+                <div className="flex flex-col items-end gap-1.5 shrink-0 mt-1">
+                  <span className="text-xs text-slate-400">{timeAgo(item.last_action_at, isAr)}</span>
+                  {item.slaBadge === 'critical' && (
+                    <span className="flex items-center gap-1 text-xs font-medium text-red-600">
+                      <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                      SLA
+                    </span>
+                  )}
+                  {item.slaBadge === 'warning' && (
+                    <span className="flex items-center gap-1 text-xs font-medium text-amber-600">
+                      <span className="w-2 h-2 rounded-full bg-amber-400" />
+                      SLA
+                    </span>
+                  )}
                 </div>
               </Link>
             );

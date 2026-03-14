@@ -15,7 +15,7 @@ export default async function InboxPage() {
 
   const { data: requests } = await service
     .from('requests')
-    .select('id, request_number, subject, request_type, status, priority, created_at, requester_id, origin_company_id, parent_request_id, task_type')
+    .select('id, request_number, subject, request_type, status, priority, created_at, submitted_at, requester_id, origin_company_id, parent_request_id, task_type')
     .eq('assigned_to', emp.id)
     .in('status', ['in_progress', 'pending_clarification'])
     .order('created_at', { ascending: false });
@@ -28,7 +28,7 @@ export default async function InboxPage() {
   const companyIds   = [...new Set(rows.map(r => r.origin_company_id).filter(Boolean))];
 
   // Get last action per request to find who sent it
-  const [{ data: lastActions }, { data: emps }, { data: cos }] = await Promise.all([
+  const [{ data: lastActions }, { data: emps }, { data: cos }, { data: slaConfigs }] = await Promise.all([
     service.from('request_actions')
       .select('request_id, actor_id, created_at')
       .in('request_id', requestIds)
@@ -39,6 +39,7 @@ export default async function InboxPage() {
     companyIds.length > 0
       ? service.from('companies').select('id, name_ar, name_en').in('id', companyIds)
       : Promise.resolve({ data: [] as any[] }),
+    service.from('sla_configs').select('request_type, target_hours, max_hours'),
   ]);
 
   // Find last action per request
@@ -61,15 +62,27 @@ export default async function InboxPage() {
 
   const empMap = new Map(allEmps.map(e => [e.id, e]));
   const coMap  = new Map((cos || []).map(c => [c.id, c]));
+  const slaMap = new Map((slaConfigs || []).map((c: any) => [c.request_type, c]));
 
+  const now = Date.now();
   const items = rows.map(r => {
     const lastAction = lastActionMap.get(r.id);
+
+    // SLA badge
+    let slaBadge: 'ok' | 'warning' | 'critical' | null = null;
+    const sla = slaMap.get(r.request_type);
+    if (sla && r.submitted_at) {
+      const hoursElapsed = (now - new Date(r.submitted_at).getTime()) / 3_600_000;
+      slaBadge = hoursElapsed >= sla.max_hours ? 'critical' : hoursElapsed >= sla.target_hours ? 'warning' : 'ok';
+    }
+
     return {
       ...r,
       requester:      empMap.get(r.requester_id) || null,
       company:        coMap.get(r.origin_company_id) || null,
       sender:         lastAction?.actor_id ? empMap.get(lastAction.actor_id) || null : null,
       last_action_at: lastAction?.created_at ?? r.created_at,
+      slaBadge,
     };
   });
 

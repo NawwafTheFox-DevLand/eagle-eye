@@ -175,6 +175,8 @@ interface Props {
   childAssigneeMap?: Record<string, any>;
   parentRequest?: any;
   dependsOnStatus?: string | null;
+  // SLA
+  slaInfo?: { hoursElapsed: number; targetHours: number; maxHours: number; status: 'ok' | 'warning' | 'critical' } | null;
 }
 
 // ─── Component ─────────────────────────────────────────────────────────────────
@@ -205,6 +207,7 @@ export default function RequestDetailClient({
   childAssigneeMap = {},
   parentRequest = null,
   dependsOnStatus = null,
+  slaInfo = null,
 }: Props) {
   const { lang } = useLanguage();
   const isAr = lang === 'ar';
@@ -796,7 +799,63 @@ export default function RequestDetailClient({
             )}
           </div>
 
-          {/* 2. Gate badges */}
+          {/* 2. SLA Indicator */}
+          {slaInfo && (
+            <div className={`bg-white rounded-2xl border shadow-sm p-6 ${
+              slaInfo.status === 'critical' ? 'border-red-300' :
+              slaInfo.status === 'warning'  ? 'border-amber-300' :
+                                              'border-slate-200'
+            }`}>
+              <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">
+                {isAr ? 'مؤشر SLA' : 'SLA Status'}
+              </h2>
+
+              {/* Status badge */}
+              <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold mb-4 ${
+                slaInfo.status === 'critical' ? 'bg-red-100 text-red-700' :
+                slaInfo.status === 'warning'  ? 'bg-amber-100 text-amber-700' :
+                                                'bg-emerald-100 text-emerald-700'
+              }`}>
+                <span className={`w-2 h-2 rounded-full ${
+                  slaInfo.status === 'critical' ? 'bg-red-500' :
+                  slaInfo.status === 'warning'  ? 'bg-amber-500' :
+                                                  'bg-emerald-500'
+                }`} />
+                {slaInfo.status === 'critical'
+                  ? (isAr ? 'متجاوز الحد الأقصى' : 'SLA Breached')
+                  : slaInfo.status === 'warning'
+                  ? (isAr ? 'اقترب من الحد' : 'Approaching Limit')
+                  : (isAr ? 'ضمن المدة' : 'On Track')
+                }
+              </div>
+
+              {/* Progress bar */}
+              <div className="mb-3">
+                <div className="flex justify-between text-xs text-slate-500 mb-1">
+                  <span>{isAr ? 'مضى' : 'Elapsed'}</span>
+                  <span>{Math.round(slaInfo.hoursElapsed)}h / {slaInfo.targetHours}h</span>
+                </div>
+                <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      slaInfo.status === 'critical' ? 'bg-red-500' :
+                      slaInfo.status === 'warning'  ? 'bg-amber-400' :
+                                                      'bg-emerald-500'
+                    }`}
+                    style={{ width: `${Math.min(100, (slaInfo.hoursElapsed / slaInfo.maxHours) * 100).toFixed(1)}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Labels */}
+              <div className="flex justify-between text-xs text-slate-400">
+                <span>{isAr ? 'الهدف:' : 'Target:'} {slaInfo.targetHours}h</span>
+                <span>{isAr ? 'الحد الأقصى:' : 'Max:'} {slaInfo.maxHours}h</span>
+              </div>
+            </div>
+          )}
+
+          {/* 3. Gate badges */}
           {showGates && gates.length > 0 && (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
               <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">
@@ -819,7 +878,7 @@ export default function RequestDetailClient({
             </div>
           )}
 
-          {/* 3. Duration card */}
+          {/* 4. Duration card */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
             <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-3">
               {isAr ? 'مدة المعالجة' : 'Processing Time'}

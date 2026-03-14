@@ -75,6 +75,7 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
       { data: allCompanies },
       { data: allDepartments },
       { data: empRoles },
+      { data: slaConfigRow },
     ] = await Promise.all([
       personIds.length > 0
         ? service.from('employees').select('id, full_name_ar, full_name_en').in('id', personIds)
@@ -89,11 +90,23 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
       service.from('companies').select('id, name_ar, name_en, code, is_holding').order('name_ar'),
       service.from('departments').select('id, name_ar, name_en, code, company_id').eq('is_active', true).order('name_ar'),
       service.from('user_roles').select('role, company_id').eq('employee_id', emp.id).eq('is_active', true),
+      service.from('sla_configs').select('target_hours, max_hours').eq('request_type', request.request_type).maybeSingle(),
     ]);
 
     const empMap  = new Map((persons || []).map((p: any) => [p.id, p]));
     const coMap   = new Map((companies || []).map((c: any) => [c.id, c]));
     const deptMap = new Map((departments || []).map((d: any) => [d.id, d]));
+
+    // ── SLA computation ───────────────────────────────────────────────────────
+    let slaInfo: { hoursElapsed: number; targetHours: number; maxHours: number; status: 'ok' | 'warning' | 'critical' } | null = null;
+    if (slaConfigRow && request.submitted_at) {
+      const startTime = new Date(request.submitted_at).getTime();
+      const endTime   = request.completed_at ? new Date(request.completed_at).getTime() : Date.now();
+      const hoursElapsed = (endTime - startTime) / 3_600_000;
+      const { target_hours: targetHours, max_hours: maxHours } = slaConfigRow as any;
+      const status = hoursElapsed >= maxHours ? 'critical' : hoursElapsed >= targetHours ? 'warning' : 'ok';
+      slaInfo = { hoursElapsed, targetHours, maxHours, status };
+    }
 
     // ── Onboarding-specific data ──────────────────────────────────────────────
     const isOnboardingParent =
@@ -243,6 +256,7 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
         childAssigneeMap={Object.fromEntries(empMap)}
         parentRequest={parentRequest}
         dependsOnStatus={dependsOnStatus}
+        slaInfo={slaInfo}
       />
     );
   } catch (err: any) {
