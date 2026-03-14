@@ -157,6 +157,18 @@ export default function NewRequestForm({ configs, companies, departments, employ
   const [leaveEnd, setLeaveEnd] = useState('');
   const [meta, setMeta] = useState<Record<string, string>>({});
 
+  // Onboarding: employees in the selected target department
+  const [onboardingDeptEmployees, setOnboardingDeptEmployees] = useState<any[]>([]);
+
+  useEffect(() => {
+    const deptId = meta.onboard_dept_id;
+    if (deptId) {
+      getDepartmentEmployees(deptId).then(setOnboardingDeptEmployees);
+    } else {
+      setOnboardingDeptEmployees([]);
+    }
+  }, [meta.onboard_dept_id]);
+
   const setMetaField = (key: string, value: string) =>
     setMeta(prev => ({ ...prev, [key]: value }));
 
@@ -582,7 +594,13 @@ export default function NewRequestForm({ configs, companies, departments, employ
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <FieldLabel ar="القسم" en="Department" required />
-                  <select value={meta.onboard_dept_id || ''} onChange={e => setMetaField('onboard_dept_id', e.target.value)} className={INPUT_CLS}>
+                  <select
+                    value={meta.onboard_dept_id || ''}
+                    onChange={e => {
+                      setMeta(prev => ({ ...prev, onboard_dept_id: e.target.value, direct_manager_id: '' }));
+                    }}
+                    className={INPUT_CLS}
+                  >
                     <option value="">{isAr ? '-- اختر القسم --' : '-- Select department --'}</option>
                     {departments.filter(d => d.company_id === employee.company_id).map(d => (
                       <option key={d.id} value={d.id}>{isAr ? d.name_ar : d.name_en}</option>
@@ -609,8 +627,23 @@ export default function NewRequestForm({ configs, companies, departments, employ
               </div>
               <div>
                 <FieldLabel ar="المدير المباشر" en="Direct Manager" />
-                <input type="text" value={meta.direct_manager || ''} onChange={e => setMetaField('direct_manager', e.target.value)}
-                  className={INPUT_CLS} placeholder={isAr ? 'اسم المدير المباشر' : 'Direct manager name'} />
+                <select
+                  value={meta.direct_manager_id || ''}
+                  onChange={e => setMetaField('direct_manager_id', e.target.value)}
+                  disabled={!meta.onboard_dept_id}
+                  className={`${INPUT_CLS} disabled:opacity-50 disabled:cursor-not-allowed`}
+                >
+                  <option value="">
+                    {!meta.onboard_dept_id
+                      ? (isAr ? '-- اختر القسم أولاً --' : '-- Select department first --')
+                      : (isAr ? '-- اختياري --' : '-- Optional --')}
+                  </option>
+                  {onboardingDeptEmployees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.full_name_ar} ({emp.employee_code}){emp.title_ar ? ' — ' + emp.title_ar : ''}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
           )}
@@ -777,11 +810,13 @@ export default function NewRequestForm({ configs, companies, departments, employ
                 ...(payee ? [{ label: isAr ? 'المستفيد' : 'Payee', value: payee, icon: '👤' }] : []),
               ] : []),
               ...(selectedType === 'employee_onboarding' ? [
-                { label: isAr ? 'اسم الموظف' : 'Employee Name', value: meta.emp_name_ar || '—', icon: '👤' },
-                { label: isAr ? 'الهوية' : 'National ID',       value: meta.national_id || '—',  icon: '🪪' },
-                { label: isAr ? 'المسمى الوظيفي' : 'Job Title', value: meta.job_title_ar || '—', icon: '💼' },
-                { label: isAr ? 'الراتب' : 'Salary',             value: meta.salary ? `${meta.salary} SAR` : '—', icon: '💰' },
-                { label: isAr ? 'تاريخ الانضمام' : 'Start Date', value: meta.start_date || '—',  icon: '📅' },
+                { label: isAr ? 'اسم الموظف' : 'Employee Name',   value: meta.emp_name_ar || '—',  icon: '👤' },
+                { label: isAr ? 'الهوية' : 'National ID',          value: meta.national_id || '—',  icon: '🪪' },
+                { label: isAr ? 'المسمى الوظيفي' : 'Job Title',   value: meta.job_title_ar || '—', icon: '💼' },
+                { label: isAr ? 'القسم' : 'Department',            value: departments.find(d => d.id === meta.onboard_dept_id) ? (isAr ? departments.find(d => d.id === meta.onboard_dept_id)!.name_ar : departments.find(d => d.id === meta.onboard_dept_id)!.name_en) : '—', icon: '🏬' },
+                { label: isAr ? 'الراتب' : 'Salary',               value: meta.salary ? `${meta.salary} SAR` : '—', icon: '💰' },
+                { label: isAr ? 'تاريخ الانضمام' : 'Start Date',  value: meta.start_date || '—',   icon: '📅' },
+                ...(meta.direct_manager_id ? [{ label: isAr ? 'المدير المباشر' : 'Direct Manager', value: (() => { const m = onboardingDeptEmployees.find(e => e.id === meta.direct_manager_id); return m ? `${m.full_name_ar} (${m.employee_code})` : meta.direct_manager_id; })(), icon: '👨‍💼' }] : []),
               ] : []),
               ...(selectedType === 'leave_approval' ? [
                 { label: isAr ? 'نوع الإجازة' : 'Leave Type', value: isAr ? leaveTypeLabel?.ar : leaveTypeLabel?.en, icon: '🗓' },
