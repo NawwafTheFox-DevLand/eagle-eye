@@ -2,8 +2,8 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import Image from 'next/image';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import NovusLogo from '@/components/brand/NovusLogo';
 
 interface SidebarProps {
   employee: any;
@@ -76,18 +76,10 @@ export default function Sidebar({ employee, roles, inboxCount, notifCount, isHRH
     <aside className={`flex flex-col bg-slate-900 text-white h-screen sticky top-0 transition-all duration-300 ${collapsed ? 'w-16' : 'w-64'} shrink-0`}>
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-slate-700/50">
-        <div className="w-8 h-8 shrink-0 flex items-center justify-center">
-          <Image src="/logo.png" alt="Eagle Eye" width={32} height={32} className="object-contain" />
-        </div>
-        {!collapsed && (
-          <div className="min-w-0">
-            <p className="font-bold text-sm truncate">{isAr ? 'عين النسر' : 'Eagle Eye'}</p>
-            <p className="text-[10px] text-slate-400 truncate">Eagle Eye Platform</p>
-          </div>
-        )}
+        <NovusLogo variant="dark" size={28} showText={!collapsed} className={collapsed ? 'mx-auto' : ''} />
         <button
           onClick={() => setCollapsed(c => !c)}
-          className={`${collapsed ? 'mx-auto' : 'ms-auto'} text-slate-400 hover:text-white transition-colors text-xs shrink-0`}
+          className={`${collapsed ? 'mx-auto mt-0' : 'ms-auto'} text-slate-400 hover:text-white transition-colors text-xs shrink-0`}
           title={collapsed ? 'Expand' : 'Collapse'}
         >
           {collapsed ? '▶' : '◀'}

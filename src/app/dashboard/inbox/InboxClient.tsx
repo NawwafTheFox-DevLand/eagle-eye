@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import NovusLogo from '@/components/brand/NovusLogo';
 
 const STATUS_COLORS: Record<string, string> = {
   in_progress: 'bg-blue-100 text-blue-700',
@@ -66,7 +67,9 @@ export default function InboxClient({ items }: { items: any[] }) {
 
       {items.length === 0 ? (
         <div className="card p-12 text-center">
-          <p className="text-5xl mb-4">📥</p>
+          <div className="flex justify-center mb-4">
+            <NovusLogo variant="empty" size={56} showText={false} />
+          </div>
           <p className="text-slate-500">{isAr ? 'صندوق الوارد فارغ' : 'Inbox is empty'}</p>
         </div>
       ) : (

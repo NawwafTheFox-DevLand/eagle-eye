@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
-import Image from 'next/image';
+import NovusLogo from '@/components/brand/NovusLogo';
 
 export default function LoginPage() {
   const { lang, toggle } = useLanguage();
@@ -35,16 +35,14 @@ export default function LoginPage() {
       <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-slate-900 via-blue-950 to-slate-800 flex-col items-center justify-center p-12 relative overflow-hidden">
         <div className="absolute inset-0 opacity-10">
           <div className="absolute top-20 left-20 w-64 h-64 bg-blue-400 rounded-full blur-3xl" />
-          <div className="absolute bottom-20 right-20 w-48 h-48 bg-blue-300 rounded-full blur-3xl" />
+          <div className="absolute bottom-20 right-20 w-48 h-48 bg-emerald-400 rounded-full blur-3xl" />
         </div>
         <div className="relative z-10 text-center">
-          <div className="w-32 h-32 mx-auto mb-8 flex items-center justify-center">
-            <Image src="/logo.png" alt="Eagle Eye" width={128} height={128} className="object-contain" />
+          <div className="mx-auto mb-8 flex items-center justify-center">
+            <NovusLogo variant="dark" size={80} showText={false} />
           </div>
-          <h1 className="text-4xl font-bold text-white mb-3">
-            {isAr ? 'عين النسر' : 'Eagle Eye'}
-          </h1>
-          <p className="text-blue-200 text-lg mb-2">Eagle Eye Platform</p>
+          <h1 className="text-4xl font-bold text-white mb-3 tracking-widest">NOVUS</h1>
+          <p className="text-blue-200 text-lg mb-2">Clarity in Every Workflow</p>
           <p className="text-slate-400 text-sm max-w-xs mx-auto">
             {isAr
               ? 'منصة متكاملة لإدارة الطلبات والعلاقات الحكومية'
@@ -52,7 +50,7 @@ export default function LoginPage() {
           </p>
         </div>
         <div className="absolute bottom-8 text-slate-500 text-xs">
-          © 2026 Eagle Eye. All rights reserved.
+          © 2026 Novus. All rights reserved.
         </div>
       </div>
 
@@ -61,8 +59,8 @@ export default function LoginPage() {
         <div className="w-full max-w-md">
           {/* Mobile logo */}
           <div className="lg:hidden text-center mb-8">
-            <Image src="/logo.png" alt="Eagle Eye" width={64} height={64} className="mx-auto mb-3 object-contain" />
-            <h1 className="text-2xl font-bold text-slate-900">{isAr ? 'عين النسر' : 'Eagle Eye'}</h1>
+            <NovusLogo variant="light" size={48} showText={false} className="justify-center" />
+            <h1 className="text-2xl font-bold text-slate-900 mt-3 tracking-widest">NOVUS</h1>
           </div>
 
           {/* Language toggle */}

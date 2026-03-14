@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
 import { exportToCSV } from '@/lib/utils/export';
+import NovusLogo from '@/components/brand/NovusLogo';
 
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-slate-100 text-slate-600',
@@ -213,7 +214,9 @@ export default function RequestsClient({ requests, currentEmployeeId, myActions 
 
       {filtered.length === 0 ? (
         <div className="card p-12 text-center">
-          <p className="text-5xl mb-4">📋</p>
+          <div className="flex justify-center mb-4">
+            <NovusLogo variant="empty" size={56} showText={false} />
+          </div>
           <p className="text-slate-500 mb-4">{isAr ? 'لا توجد طلبات' : 'No requests found'}</p>
           <Link href="/dashboard/new-request" className="btn-primary">
             {isAr ? 'إنشاء طلب جديد' : 'Create new request'}

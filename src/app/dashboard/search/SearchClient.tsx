@@ -2,6 +2,7 @@
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useLanguage } from '@/lib/i18n/LanguageContext';
+import NovusLogo from '@/components/brand/NovusLogo';
 
 const STATUS_LABELS: Record<string, { ar: string; en: string }> = {
   draft:                 { ar: 'مسودة',             en: 'Draft'                 },
@@ -156,7 +157,9 @@ export default function SearchClient({ requests, empMap, companies, roleLevel }:
       {/* Results */}
       {results.length === 0 ? (
         <div className="card p-12 text-center">
-          <p className="text-5xl mb-4">🔍</p>
+          <div className="flex justify-center mb-4">
+            <NovusLogo variant="empty" size={56} showText={false} />
+          </div>
           <p className="text-slate-500 text-sm">{isAr ? 'لا توجد نتائج' : 'No results found'}</p>
         </div>
       ) : (
